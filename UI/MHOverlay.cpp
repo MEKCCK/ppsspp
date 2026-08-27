@@ -12,7 +12,7 @@
 #include "Common/Render/DrawBuffer.h"
 #include "Common/Render/Text/draw_text.h"
 #include "Common/UI/Context.h"
-#include "UI/Theme.h"
+#include "Common/UI/View.h"
 #include "Core/Core.h"
 #include "Core/ELF/ParamSFO.h"
 #include "Core/MemMap.h"
