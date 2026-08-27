@@ -35,6 +35,8 @@ list(APPEND UISource
 	BaseScreens.cpp
 	DebugOverlay.cpp
 	DebugOverlay.h
+	MHOverlay.cpp
+	MHOverlay.h
 	DevScreens.cpp
 	DevScreens.h
 	DisplayLayoutScreen.cpp
