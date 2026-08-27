@@ -737,6 +737,11 @@ int main(int argc, char *argv[]) {
 bool System_MakeRequest(SystemRequestType type, int requestId, const std::string &param1, const std::string &param2, int64_t param3, int64_t param4) {
 	switch (type) {
 	case SystemRequestType::INPUT_TEXT_MODAL: {
+		// Copy parameters before dispatching - the block runs asynchronously and
+		// must not reference the request's temporary strings.
+		const std::string title = param1;
+		const std::string defaultValue = param2;
+		const bool passwordMasking = param3 != 0;
 		dispatch_async(dispatch_get_main_queue(), ^{
 			UIViewController *presenter = nil;
 			for (UIWindowScene *scene in UIApplication.sharedApplication.connectedScenes) {
@@ -755,10 +760,10 @@ bool System_MakeRequest(SystemRequestType type, int requestId, const std::string
 				return;
 			}
 
-			UIAlertController *alert = [UIAlertController alertControllerWithTitle:[NSString stringWithUTF8String:param1.c_str()] message:nil preferredStyle:UIAlertControllerStyleAlert];
+			UIAlertController *alert = [UIAlertController alertControllerWithTitle:[NSString stringWithUTF8String:title.c_str()] message:nil preferredStyle:UIAlertControllerStyleAlert];
 			[alert addTextFieldWithConfigurationHandler:^(UITextField *textField) {
-				textField.text = [NSString stringWithUTF8String:param2.c_str()];
-				textField.secureTextEntry = param3 != 0;
+				textField.text = [NSString stringWithUTF8String:defaultValue.c_str()];
+				textField.secureTextEntry = passwordMasking;
 				textField.autocorrectionType = UITextAutocorrectionTypeNo;
 				textField.spellCheckingType = UITextSpellCheckingTypeNo;
 			}];
