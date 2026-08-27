@@ -81,7 +81,7 @@ static const std::map<std::string, const char *> kMonsterNamesZh = {
 	{"Fatalis", "黑龙"},
 	{"Felyne", "艾露猫"},
 	{"Furious Rajang", "激昂金狮子"},
-	{"Gargwa", "咕鸭"},
+	{"Gargwa", "丸鸟"},
 	{"Gendrome", "黄速龙王"},
 	{"Genprey", "黄速龙"},
 	{"Giadrome", "白速龙王"},
