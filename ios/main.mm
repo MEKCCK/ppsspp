@@ -418,6 +418,10 @@ bool System_GetPropertyBool(SystemProperty prop) {
 		case SYSPROP_CAN_GET_FREE_SPACE_FAST:
 			return false;
 
+		case SYSPROP_HAS_TEXT_INPUT_DIALOG:
+			// Text input is available via the UIAlertController presented in System_MakeRequest below.
+			return true;
+
 		default:
 			return false;
 	}
@@ -726,3 +730,56 @@ int main(int argc, char *argv[]) {
 	}
 }
 
+// Text input for PPSSPP's system request API (INPUT_TEXT_MODAL) plus simple
+// clipboard support. Without this, iOS was the only PPSSPP platform where no
+// text entry was possible at all (the UI gates input boxes on
+// SYSPROP_HAS_TEXT_INPUT_DIALOG, which used to fall through to false here).
+bool System_MakeRequest(SystemRequestType type, int requestId, const std::string &param1, const std::string &param2, int64_t param3, int64_t param4) {
+	switch (type) {
+	case SystemRequestType::INPUT_TEXT_MODAL: {
+		dispatch_async(dispatch_get_main_queue(), ^{
+			UIViewController *presenter = nil;
+			for (UIWindowScene *scene in UIApplication.sharedApplication.connectedScenes) {
+				if (![scene isKindOfClass:[UIWindowScene class]]) {
+					continue;
+				}
+				if (scene.windows.count > 0) {
+					presenter = ((UIWindow *)[scene.windows firstObject]).rootViewController;
+					if (presenter) {
+						break;
+					}
+				}
+			}
+			if (!presenter) {
+				g_requestManager.PostSystemFailure(requestId, 0);
+				return;
+			}
+
+			UIAlertController *alert = [UIAlertController alertControllerWithTitle:[NSString stringWithUTF8String:param1.c_str()] message:nil preferredStyle:UIAlertControllerStyleAlert];
+			[alert addTextFieldWithConfigurationHandler:^(UITextField *textField) {
+				textField.text = [NSString stringWithUTF8String:param2.c_str()];
+				textField.secureTextEntry = param3 != 0;
+				textField.autocorrectionType = UITextAutocorrectionTypeNo;
+				textField.spellCheckingType = UITextSpellCheckingTypeNo;
+			}];
+			UIAlertAction *cancelAction = [UIAlertAction actionWithTitle:NSLocalizedString(@"Cancel", @"") style:UIAlertActionStyleCancel handler:^(UIAlertAction *action) {
+				g_requestManager.PostSystemFailure(requestId, 0);
+			}];
+			UIAlertAction *okAction = [UIAlertAction actionWithTitle:NSLocalizedString(@"OK", @"") style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+				NSString *text = alert.textFields.firstObject.text ?: @"";
+				g_requestManager.PostSystemSuccess(requestId, [text UTF8String]);
+			}];
+			[alert addAction:cancelAction];
+			[alert addAction:okAction];
+			[presenter presentViewController:alert animated:YES completion:nil];
+		});
+		return true;
+	}
+	case SystemRequestType::COPY_TO_CLIPBOARD: {
+		[UIPasteboard generalPasteboard].string = [NSString stringWithUTF8String:param1.c_str()];
+		return true;
+	}
+	default:
+		return false;
+	}
+}
