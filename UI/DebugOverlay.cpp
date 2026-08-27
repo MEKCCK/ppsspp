@@ -30,6 +30,7 @@
 
 #include "UI/DevScreens.h"
 #include "UI/DebugOverlay.h"
+#include "UI/MHOverlay.h"
 
 // For std::max
 #include <algorithm>
@@ -270,6 +271,10 @@ void DrawDebugOverlay(UIContext *ctx, const Bounds &bounds, DebugOverlay overlay
 	case DebugOverlay::FRAMEBUFFER_LIST:
 		if (inGame)
 			DrawFramebufferList(ctx, gpu, layoutBounds);
+		break;
+	case DebugOverlay::MH_HP:
+		if (inGame)
+			DrawMHOverlay(ctx, layoutBounds);
 		break;
 	default:
 		break;
