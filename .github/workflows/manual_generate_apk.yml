@@ -1,3 +1,5 @@
+# NOTE: no changes needed for the MH HP overlay build - the overlay
+# is part of the source tree and compiles in automatically.
 name: Manual Generate Android APK
 on:
   workflow_dispatch:
