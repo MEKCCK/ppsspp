@@ -53,6 +53,8 @@ class P3rdModsScreen : public UIScreen {
 public:
 	P3rdModsScreen() {}
 
+	const char *tag() const override { return "P3rdMods"; }
+
 	void CreateViews() override;
 
 protected:
