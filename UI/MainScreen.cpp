@@ -42,7 +42,6 @@
 #include "UI/BackgroundAudio.h"
 #include "UI/EmuScreen.h"
 #include "UI/MainScreen.h"
-#include "UI/P3rdMods.h"
 #include "UI/GameScreen.h"
 #include "UI/GameInfoCache.h"
 #include "UI/GameSettingsScreen.h"
@@ -306,9 +305,6 @@ void MainScreen::CreateMainButtons(UI::ViewGroup *parent, bool portrait) {
 	}
 	parent->Add(portrait ? new Choice(ImageID("I_GEAR"), portrait ? new LinearLayoutParams() : nullptr) : new Choice(mm->T("Game Settings", "Settings")))->OnClick.Handle(this, &MainScreen::OnGameSettings);
 	parent->Add(portrait ? new Choice(ImageID("I_INFO"), portrait ? new LinearLayoutParams() : nullptr) : new Choice(mm->T("About PPSSPP")))->OnClick.Handle(this, &MainScreen::OnCredits);
-	parent->Add(portrait ? new Choice(mm->T("P3rd Mods")) : new Choice(mm->T("P3rd Mods")))->OnClick.Add([this](UI::EventParams &) {
-		screenManager()->push(new P3rdModsScreen());
-	});
 
 	if (!portrait) {
 		parent->Add(new Choice(mm->T("www.ppsspp.org")))->OnClick.Handle(this, &MainScreen::OnPPSSPPOrg);
