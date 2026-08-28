@@ -37,6 +37,8 @@ list(APPEND UISource
 	DebugOverlay.h
 	MHOverlay.cpp
 	MHOverlay.h
+	P3rdMods.cpp
+	P3rdMods.h
 	DevScreens.cpp
 	DevScreens.h
 	DisplayLayoutScreen.cpp
