@@ -8,7 +8,10 @@
 #include <string>
 #include <vector>
 
+#include "Common/Data/Format/IniFile.h"
 #include "Common/Data/Text/I18n.h"
+#include "Common/File/Path.h"
+#include "Core/Config.h"
 #include "Common/Render/DrawBuffer.h"
 #include "Common/Render/Text/draw_text.h"
 #include "Common/UI/Context.h"
@@ -325,26 +328,75 @@ static void ReadMonsters(const MHGame &game, std::vector<MHMonster> &out) {
 // Formatting & rendering
 // ---------------------------------------------------------------------------
 
-// Visual/config knobs, mirroring the PC overlay's config.ini defaults.
-static constexpr bool kShowInitialHp = true;
-static constexpr bool kShowHpPercentage = true;
-static constexpr bool kShowSmallMonsters = true;
-static constexpr bool kShowSizeMultiplier = true;
-static constexpr bool kShowCrown = true;
-static constexpr bool kShowAbnormalStatus = true;
-
-static constexpr float kFontScale = 0.9f;
-static constexpr float kMarginRight = 8.0f;
-static constexpr float kMarginTop = 8.0f;
-static constexpr float kPadX = 6.0f;
-static constexpr float kPadY = 3.0f;
-static constexpr float kGapY = 3.0f;
+// Visual defaults, mirroring the PC overlay's config.ini. All of these can be
+// overridden at runtime by editing mh_overlay.ini on the memory stick - no
+// rebuild needed. Example:
+//   [General]
+//   Position = top_right        ; top_right | top_left | bottom_right | bottom_left
+//   FontScale = 0.9
+//   ShowSmallMonsters = true
+//   ShowAbnormalStatus = true
+static constexpr bool kDefaultShowInitialHp = true;
+static constexpr bool kDefaultShowHpPercentage = true;
+static constexpr bool kDefaultShowSmallMonsters = true;
+static constexpr bool kDefaultShowSizeMultiplier = true;
+static constexpr bool kDefaultShowCrown = true;
+static constexpr bool kDefaultShowAbnormalStatus = true;
+static constexpr float kDefaultFontScale = 0.9f;
 
 // Colors are 0xAABBGGRR.
-static constexpr uint32_t kTextColor = 0xFFD4FF7F;         // aquamarine
-static constexpr uint32_t kBackgroundColor = 0x994F4F2F;   // darkslategray @ 60%
-static constexpr uint32_t kStatusTextColor = 0xFF00FFFF;   // yellow
+static constexpr uint32_t kTextColor = 0xFFD4FF7F;            // aquamarine
+static constexpr uint32_t kBackgroundColor = 0x994F4F2F;      // darkslategray @ 60%
+static constexpr uint32_t kStatusTextColor = 0xFF00FFFF;      // yellow
 static constexpr uint32_t kStatusBackgroundColor = 0x80000080;  // green @ 50%
+
+enum class MHOverlayPosition {
+	TOP_RIGHT = 0,
+	TOP_LEFT = 1,
+	BOTTOM_RIGHT = 2,
+	BOTTOM_LEFT = 3,
+};
+
+struct MHOverlaySettings {
+	MHOverlayPosition position = MHOverlayPosition::TOP_RIGHT;
+	float fontScale = kDefaultFontScale;
+	bool showInitialHp = kDefaultShowInitialHp;
+	bool showHpPercentage = kDefaultShowHpPercentage;
+	bool showSmallMonsters = kDefaultShowSmallMonsters;
+	bool showSizeMultiplier = kDefaultShowSizeMultiplier;
+	bool showCrown = kDefaultShowCrown;
+	bool showAbnormalStatus = kDefaultShowAbnormalStatus;
+};
+
+static MHOverlaySettings g_mhSettings;
+static int g_settingsReloadCounter = 0;
+
+// Reloaded from mh_overlay.ini on the memory stick every 2 seconds (on first
+// draw too). Cheap - missing/empty file just keeps the defaults.
+static void LoadSettings() {
+	IniFile ini;
+	MHOverlaySettings s{};
+	if (ini.Load(g_Config.memStickDirectory / "mh_overlay.ini")) {
+		Section *general = ini.GetOrCreateSection("General");
+		std::string position;
+		if (general->Get("Position", &position)) {
+			if (position == "top_left") s.position = MHOverlayPosition::TOP_LEFT;
+			else if (position == "bottom_right") s.position = MHOverlayPosition::BOTTOM_RIGHT;
+			else if (position == "bottom_left") s.position = MHOverlayPosition::BOTTOM_LEFT;
+			else s.position = MHOverlayPosition::TOP_RIGHT;
+		}
+		general->Get("FontScale", &s.fontScale);
+		if (s.fontScale < 0.4f) s.fontScale = 0.4f;
+		if (s.fontScale > 2.0f) s.fontScale = 2.0f;
+		general->Get("ShowInitialHp", &s.showInitialHp);
+		general->Get("ShowHpPercentage", &s.showHpPercentage);
+		general->Get("ShowSmallMonsters", &s.showSmallMonsters);
+		general->Get("ShowSizeMultiplier", &s.showSizeMultiplier);
+		general->Get("ShowCrown", &s.showCrown);
+		general->Get("ShowAbnormalStatus", &s.showAbnormalStatus);
+	}
+	g_mhSettings = s;
+}
 
 static const char *LocalizedName(const char *english, bool useChinese) {
 	if (!useChinese) {
@@ -352,6 +404,17 @@ static const char *LocalizedName(const char *english, bool useChinese) {
 	}
 	auto it = kMonsterNamesZh.find(english);
 	return it != kMonsterNamesZh.end() ? it->second : english;
+}
+
+static const char *StatusName(bool useChinese, const char *english) {
+	if (!useChinese) {
+		return english;
+	}
+	static const std::map<std::string, const char *> zh = {
+		{"Poison", "毒"}, {"Sleep", "眠"}, {"Paralysis", "麻"}, {"Dizzy", "晕"}, {"Rage", "怒"},
+	};
+	auto it = zh.find(english);
+	return it != zh.end() ? it->second : english;
 }
 
 static const char *Crown(uint16_t size, const MHMonsterDef &def) {
@@ -372,52 +435,57 @@ static std::string FormatHp(uint32_t hp, uint32_t maxHp, bool withPercent, bool 
 	if (withPercent && maxHp > 0) {
 		int pct = (int)std::ceil((double)hp * 100.0 / (double)maxHp);
 		char buf[32];
-		snprintf(buf, sizeof(buf), " %d%% |", pct);
-		text += buf;
+		snprintf(buf, sizeof(buf), "%d%%", pct);
+		text = buf;
+		text += " | " + std::to_string(hp);
+	} else {
+		text = std::to_string(hp);
 	}
-	text += " " + std::to_string(hp);
 	if (withInitial) {
 		text += " | " + std::to_string(maxHp);
 	}
 	return text;
 }
 
-// Builds every line of the overlay (monster label + abnormal status lines).
-// Returns the lines and, for each line, whether it's an abnormal-status line.
-static void BuildLines(const MHGame &game, const std::vector<MHMonster> &monsters, bool useChinese,
-	std::vector<std::string> &lines, std::vector<bool> &isStatus, std::vector<uint32_t> &colors) {
-	for (const MHMonster &m : monsters) {
-		const char *name = LocalizedName(m.englishName, useChinese);
+// One monster's lines: name, HP and a compact abnormal-status badge line.
+struct MHLabelSet {
+	std::string nameLine;
+	std::string hpLine;
+	std::string statusLine;
 
+	void appendStatus(const char *text) {
+		if (!statusLine.empty()) {
+			statusLine += " │ ";
+		}
+		statusLine += text;
+	}
+};
+
+static void BuildLabels(const MHGame &game, const std::vector<MHMonster> &monsters, bool useChinese, std::vector<MHLabelSet> &out) {
+	for (const MHMonster &m : monsters) {
 		if (m.large) {
 			// Large monsters only appear during a hunt; filter placeholder data.
 			if (m.maxHp <= 5 || m.hp >= 45000) {
 				continue;
 			}
-			std::string text;
-			if (kShowSizeMultiplier) {
-				text += "(" + std::to_string(m.size) + ") ";
+			MHLabelSet s;
+			if (g_mhSettings.showSizeMultiplier) {
+				s.nameLine += "(" + std::to_string(m.size) + ") ";
 			}
-			text += name;
-			if (kShowCrown) {
-				text += Crown(m.size, game.large->at(m.nameId));
+			s.nameLine += LocalizedName(m.englishName, useChinese);
+			if (g_mhSettings.showCrown) {
+				s.nameLine += Crown(m.size, game.large->at(m.nameId));
 			}
-			text += ":";
-			text += FormatHp(m.hp, m.maxHp, kShowHpPercentage, kShowInitialHp);
-			lines.push_back(text);
-			isStatus.push_back(false);
-			colors.push_back(kTextColor);
+			s.hpLine = FormatHp(m.hp, m.maxHp, g_mhSettings.showHpPercentage, g_mhSettings.showInitialHp);
 
-			if (kShowAbnormalStatus) {
+			if (g_mhSettings.showAbnormalStatus) {
 				const auto addStatus = [&](const char *key, uint32_t cur, uint32_t max) {
 					if (max == 0xFFFF) {
 						return;
 					}
 					char buf[64];
-					snprintf(buf, sizeof(buf), " %s: %u/%u", key, cur, max);
-					lines.push_back(buf);
-					isStatus.push_back(true);
-					colors.push_back(kStatusTextColor);
+					snprintf(buf, sizeof(buf), "%s %u/%u", StatusName(useChinese, key), cur, max);
+					s.appendStatus(buf);
 				};
 				addStatus("Poison", m.poisonCur, m.poisonMax);
 				addStatus("Sleep", m.sleepCur, m.sleepMax);
@@ -426,33 +494,36 @@ static void BuildLines(const MHGame &game, const std::vector<MHMonster> &monster
 					addStatus("Dizzy", m.dizzyCur, m.dizzyMax);
 				}
 				{
-					char buf[64];
-					unsigned m_ = m.rage / 60;
-					unsigned s_ = m.rage % 60;
-					snprintf(buf, sizeof(buf), " Rage: %u:%02u", m_, s_);
-					lines.push_back(buf);
-					isStatus.push_back(true);
-					colors.push_back(kStatusTextColor);
+					char buf[32];
+					snprintf(buf, sizeof(buf), "%s %u:%02u", StatusName(useChinese, "Rage"), m.rage / 60, m.rage % 60);
+					s.appendStatus(buf);
 				}
 			}
+			out.push_back(s);
 		} else {
-			if (!kShowSmallMonsters) {
+			if (!g_mhSettings.showSmallMonsters) {
 				continue;
 			}
 			// Placeholder filter for small monsters, as in the PC overlay.
 			if (m.hp >= 20000) {
 				continue;
 			}
-			std::string text;
-			text += name;
-			text += ":";
-			text += FormatHp(m.hp, m.maxHp, kShowHpPercentage, kShowInitialHp);
-			lines.push_back(text);
-			isStatus.push_back(false);
-			colors.push_back(kTextColor);
+			MHLabelSet s;
+			s.nameLine = LocalizedName(m.englishName, useChinese);
+			s.hpLine = FormatHp(m.hp, m.maxHp, g_mhSettings.showHpPercentage, g_mhSettings.showInitialHp);
+			out.push_back(s);
 		}
 	}
 }
+
+struct MHOverlayLine {
+	std::string text;
+	uint32_t color;
+	float scale;   // relative to the configured base font scale
+	bool isStatus; // uses the status background color
+	float boxW = 0.0f;
+	float boxH = 0.0f;
+};
 
 void DrawMHOverlay(UIContext *ctx, const Bounds &bounds) {
 	if (GetUIState() != UISTATE_INGAME) {
@@ -461,10 +532,13 @@ void DrawMHOverlay(UIContext *ctx, const Bounds &bounds) {
 	if (!PSP_IsInited() || !Memory::IsActive()) {
 		return;
 	}
-
 	const MHGame *game = FindGame();
 	if (!game) {
 		return;
+	}
+
+	if (g_settingsReloadCounter++ % 120 == 0) {
+		LoadSettings();
 	}
 
 	std::vector<MHMonster> monsters;
@@ -473,51 +547,73 @@ void DrawMHOverlay(UIContext *ctx, const Bounds &bounds) {
 		return;
 	}
 
-	std::vector<std::string> lines;
-	std::vector<bool> isStatus;
-	std::vector<uint32_t> colors;
 	const std::string lang = g_i18nrepo.LanguageID();
 	const bool useChinese = lang.size() >= 2 && lang[0] == 'z' && lang[1] == 'h';
-	BuildLines(*game, monsters, useChinese, lines, isStatus, colors);
-	if (lines.empty()) {
+
+	std::vector<MHLabelSet> sets;
+	BuildLabels(*game, monsters, useChinese, sets);
+	if (sets.empty()) {
 		return;
 	}
 
-	TextDrawer *td = ctx->Text();
-	td->SetOrCreateFont(ctx->GetTheme().uiFont);
-	td->SetFontScale(kFontScale, kFontScale);
+	const float mainScale = g_mhSettings.fontScale;
+	const float statusScale = mainScale * 0.72f;
+	const float margin = 8.0f;
+	const float padX = 6.0f * mainScale;
+	const float padY = 3.0f * mainScale;
+	const float gap = 3.0f * mainScale;
 
-	// Measure all lines so backgrounds can share one width (like align=true).
-	std::vector<float> widths(lines.size(), 0.0f);
-	std::vector<float> heights(lines.size(), 0.0f);
-	float maxW = 0.0f;
-	for (size_t i = 0; i < lines.size(); i++) {
-		td->MeasureString(lines[i], &widths[i], &heights[i]);
-		maxW = std::max(maxW, widths[i]);
+	// Flatten to drawable lines, one slim card per line (compact look).
+	std::vector<MHOverlayLine> lines;
+	for (const MHLabelSet &s : sets) {
+		lines.push_back({s.nameLine, kTextColor, mainScale, false});
+		lines.push_back({s.hpLine, kTextColor, mainScale, false});
+		if (!s.statusLine.empty()) {
+			lines.push_back({s.statusLine, kStatusTextColor, statusScale, true});
+		}
 	}
 
-	const float right = bounds.x2() - kMarginRight;
-	const float bgW = maxW + kPadX * 2.0f;
-	float y = bounds.y + kMarginTop;
+	// Measure every line at its own scale; share one width per group is
+	// unnecessary - each line is its own slim box, right-/left-aligned.
+	TextDrawer *td = ctx->Text();
+	td->SetOrCreateFont(ctx->GetTheme().uiFont);
+
+	std::vector<float> widths(lines.size()), heights(lines.size());
+	for (size_t i = 0; i < lines.size(); i++) {
+		td->SetFontScale(lines[i].scale, lines[i].scale);
+		td->MeasureString(lines[i].text, &widths[i], &heights[i]);
+		lines[i].boxW = widths[i] + padX * 2.0f;
+		lines[i].boxH = heights[i] + padY * 2.0f;
+	}
+
+	const bool rightSide = g_mhSettings.position == MHOverlayPosition::TOP_RIGHT || g_mhSettings.position == MHOverlayPosition::BOTTOM_RIGHT;
+	const bool bottomSide = g_mhSettings.position == MHOverlayPosition::BOTTOM_RIGHT || g_mhSettings.position == MHOverlayPosition::BOTTOM_LEFT;
+	std::vector<float> boxX(lines.size()), boxY(lines.size());
+	{
+		float y = bottomSide ? (bounds.y2() - margin) : (bounds.y + margin);
+		for (size_t i = 0; i < lines.size(); i++) {
+			float top = bottomSide ? (y - lines[i].boxH) : y;
+			boxY[i] = top;
+			boxX[i] = rightSide ? (bounds.x2() - margin - lines[i].boxW) : (bounds.x + margin);
+			y += bottomSide ? -(lines[i].boxH + gap) : (lines[i].boxH + gap);
+		}
+	}
 
 	// Background boxes.
 	ctx->Flush();
 	ctx->BeginNoTex();
 	for (size_t i = 0; i < lines.size(); i++) {
-		const float bgH = heights[i] + kPadY * 2.0f;
-		ctx->Draw()->Rect(right - bgW, y, bgW, bgH, isStatus[i] ? kStatusBackgroundColor : kBackgroundColor);
-		y += bgH + kGapY;
+		ctx->Draw()->Rect(boxX[i], boxY[i], lines[i].boxW, lines[i].boxH, lines[i].isStatus ? kStatusBackgroundColor : kBackgroundColor);
 	}
 	ctx->Flush();
 	ctx->Begin();
 	ctx->RebindTexture();
 
 	// Text (TextDrawer renders CJK; the debug bitmap font does not).
-	y = bounds.y + kMarginTop;
 	for (size_t i = 0; i < lines.size(); i++) {
-		const float bgH = heights[i] + kPadY * 2.0f;
-		td->DrawString(*ctx->Draw(), lines[i], right, y + kPadY, colors[i], ALIGN_TOPRIGHT);
-		y += bgH + kGapY;
+		td->SetFontScale(lines[i].scale, lines[i].scale);
+		float x = rightSide ? (boxX[i] + lines[i].boxW - padX) : (boxX[i] + padX);
+		td->DrawString(*ctx->Draw(), lines[i].text, x, boxY[i] + padY, lines[i].color, rightSide ? ALIGN_TOPRIGHT : ALIGN_TOPLEFT);
 	}
 	ctx->Flush();
 }
