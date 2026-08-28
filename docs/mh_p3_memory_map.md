@@ -67,45 +67,47 @@
 
 ## 2. 任务 / 游戏状态
 
-| 地址 | 含义 | 来源 |
-|---|---|---|
-| `0x09C57CA0` | 任务状态（in-quest 标志，0x656D6167 魔数附近） | **[hpbar]** **[dmg]** |
-| `0x09BAC044` | 返回中/任务阶段字节（<3 判定） | **[hpbar]** |
-| `0x08AB49EC` | 加载画面标志 | **[hpbar]** |
+| 含义 | ULJM05800（原版/NOHD） | NPJB40001（HD） | 来源 |
+|---|---|---|---|
+| 任务状态（in-quest 标志，0x656D6167 魔数附近） | `0x09C57CA0` | `0x0A05E620` | **[hpbar]**(仅原版) **[dmg]** |
+| 返回中/任务阶段字节（<3 判定） | `0x09BAC044` | 未提供 | **[hpbar]** |
+| 加载画面标志 | `0x08AB49EC` | 未提供 | **[hpbar]** |
 
 ## 3. 玩家数据
 
-| 地址 | 含义 | 来源 |
-|---|---|---|
-| `0x08B24979` | player_area（玩家状态区） | **[dmg]** |
-| `0x09B49234` | 手持武器结构体（EQUIPPED_WEAPON） | **[sharp]** |
-| `0x09B49234 + 0x5CC` | 斩味（sharpness）当前值 | **[sharp]** |
-| `0x0897D728` | 斩味表（武器各色斩味数据） | **[sharp]** |
+| 含义 | ULJM05800（原版/NOHD） | NPJB40001（HD） | 来源 |
+|---|---|---|---|
+| player_area（玩家状态区） | `0x08B24979` | `0x08B2B139` | **[dmg]** |
+| 手持武器结构体（EQUIPPED_WEAPON） | `0x09B49234` | `0x09F4FCE4` | **[sharp]** |
+| 斩味当前值 | `0x09B49234 + 0x5CC` | `0x09F4FCE4 + 0x5DC` | **[sharp]** |
+| 斩味表（武器各色斩味数据） | `0x0897D728` | `0x08983060` | **[sharp]** |
+| 精灵/纹理显示信息 | `0x08B268DC` | `0x08B2D09C` | **[sharp]** |
 
 ## 4. 物品
 
-| 地址 | 含义 | 来源 |
-|---|---|---|
-| `0x09B4C244` | 箱子 ITEM_BOX | **[item]** |
-| `0x09BA8D4A` | 口袋 1 ITEM_POUCH1 | **[item]** |
-| `0x09B4D9B4` | 口袋 2 ITEM_POUCH2 | **[item]** |
-| `0x09CD0440` | 给道具函数 GIVE_ITEM | **[item]** |
-| `0x09BB7A64` | 按键保持检测 CONTROL_HOLD | **[item]** |
+| 含义 | ULJM05800（原版/NOHD） | NPJB40001（HD） | 来源 |
+|---|---|---|---|
+| 箱子 ITEM_BOX | `0x09B4C244` | `0x09F52CF4` | **[item]** |
+| 口袋 1 ITEM_POUCH1 | `0x09BA8D4A` | `0x09FAF7FE` | **[item]** |
+| 口袋 2 ITEM_POUCH2 | `0x09B4D9B4` | `0x09F54464` | **[item]** |
+| 给道具函数 GIVE_ITEM | `0x09CD0440` | `0x0A0D20A8` | **[item]** |
+| 按键保持检测 CONTROL_HOLD | `0x09BB7A64` | `0x09FBE764` | **[item]** |
+| 套装 hook | `0x09D48EE0` | `0x0A14AAE0` | **[item]** |
 
 ## 5. 渲染 / 相机（伤害飘字、小地图、自由视角用）
 
-| 地址 | 含义 | 来源 |
-|---|---|---|
-| `0x09B486B0` | ViewMatrix（视图矩阵，世界→屏幕投影） | **[dmg]** |
-| `0x088E6D64 / 0x088EBAB8` | 主渲染 hook / 返回 | **[dmg]** |
-| `0x088EAA64` | printf（画面打印文字） | **[dmg]** |
-| `0x09C750FC` 系列 | 伤害数字 ADD hook/返回 | **[dmg]** |
-| `0x09ADB910` | 打印设置区 PRINT_SETTINGS | **[dmg]** |
-| `0x09C1EC70` | 伤害判定 CHECK | **[dmg]** |
-| `0x08960CF8` | sceGeListEnQueue（绘制队列） | **[hpbar]** |
-| `0x08800FF0` | 血条 mod 自用绘制区 | **[hpbar]** |
+| 含义 | ULJM05800（原版/NOHD） | NPJB40001（HD） | 来源 |
+|---|---|---|---|
+| ViewMatrix（视图矩阵，世界→屏幕投影） | `0x09B486B0` | `0x09F4F120` | **[dmg]** |
+| 主渲染 hook / 返回 | `0x088E6D64 / 0x088EBAB8` | `0x088E881C / 0x088EE410` | **[dmg]** |
+| printf（画面打印文字） | `0x088EAA64` | `0x088EC51C` | **[dmg]** |
+| 伤害数字 ADD hook/返回 | `0x09C750FC / 0x09C953E0` | `0x0A07BA7C / 0x0A09BD60` | **[dmg]** |
+| 打印设置区 PRINT_SETTINGS | `0x09ADB910` | `0x09EE2350` | **[dmg]** |
+| 伤害判定 CHECK | `0x09C1EC70` | `0x0A025608` | **[dmg]** |
+| sceGeListEnQueue（绘制队列） | `0x08960CF8` | 未提供 | **[hpbar]** |
+| 血条 mod 自用绘制区 | `0x08800FF0` | 未提供 | **[hpbar]** |
 
-> ViewMatrix + player_area 是之前"伤害数字"需求的两个关键锚点 —— 想做随时能继续。
+> ViewMatrix + player_area 是之前"伤害数字"需求的两个关键锚点（都有原版/HD 两套）—— 想做随时能继续。
 
 ## 6. 文件系统 / 模组加载（loader 管线）
 
