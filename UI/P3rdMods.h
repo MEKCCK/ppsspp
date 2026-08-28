@@ -3,7 +3,7 @@
 #include <string>
 #include <vector>
 
-#include "Common/UI/Screen.h"
+#include "Common/UI/UIScreen.h"
 
 // P3rd ML Mod Manager — native port of
 // https://github.com/Kurogami2134/p3rdml_modman  (Lua PSP homebrew)
