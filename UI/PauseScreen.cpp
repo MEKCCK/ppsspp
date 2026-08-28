@@ -709,7 +709,6 @@ void GamePauseScreen::CreateViews() {
 			const bool on = g_Config.iDebugOverlay == (int)DebugOverlay::MH_HP;
 			g_Config.iDebugOverlay = on ? (int)DebugOverlay::OFF : (int)DebugOverlay::MH_HP;
 			refreshMhLabel();
-			return UI::EVENT_DONE;
 		});
 		refreshMhLabel();
 	}
