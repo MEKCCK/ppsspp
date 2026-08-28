@@ -45,6 +45,7 @@
 #include "Core/Config.h"
 #include "Core/ConfigValues.h"
 #include "UI/MHOverlay.h"
+#include "UI/P3rdMods.h"
 #include "Core/RetroAchievements.h"
 #include "Core/ELF/ParamSFO.h"
 #include "Core/HLE/sceDisplay.h"
@@ -712,6 +713,11 @@ void GamePauseScreen::CreateViews() {
 		});
 		refreshMhLabel();
 	}
+
+	// P3rd ML mod manager (native port) - pause menu quick access.
+	rightColumnItems->Add(new Choice(pa->T("P3rd Mods")))->OnClick.Add([this](UI::EventParams &) {
+		screenManager()->push(new P3rdModsScreen());
+	});
 
 	if (g_Config.bAchievementsEnable && Achievements::HasAchievementsOrLeaderboards()) {
 		rightColumnItems->Add(new Choice(ac->T("Achievements"), ImageID("I_ACHIEVEMENT")))->OnClick.Add([this](UI::EventParams &e) {
