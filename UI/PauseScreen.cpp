@@ -43,6 +43,8 @@
 #include "Core/System.h"
 #include "Core/Core.h"
 #include "Core/Config.h"
+#include "Core/ConfigValues.h"
+#include "UI/MHOverlay.h"
 #include "Core/RetroAchievements.h"
 #include "Core/ELF/ParamSFO.h"
 #include "Core/HLE/sceDisplay.h"
@@ -693,6 +695,23 @@ void GamePauseScreen::CreateViews() {
 		Choice *createGameConfig = rightColumnItems->Add(new Choice(pa->T("Create Game Config"), ImageID("I_GEAR_STAR")));
 		createGameConfig->OnClick.Handle(this, &GamePauseScreen::OnCreateConfig);
 		createGameConfig->SetEnabled(!bootPending_);
+	}
+
+	// Quick toggle for the Monster Hunter HP overlay (in-game monster HP on supported games).
+	if (MHOverlay_SupportsCurrentGame()) {
+		auto pa = GetI18NCategory(I18NCat::PAUSE);
+		Choice *mhOverlayChoice = rightColumnItems->Add(new Choice(pa->T("Monster Hunter HP")));
+		const auto refreshMhLabel = [mhOverlayChoice] {
+			const bool on = g_Config.iDebugOverlay == (int)DebugOverlay::MH_HP;
+			mhOverlayChoice->SetText(on ? "Monster Hunter HP: ON" : "Monster Hunter HP: OFF");
+		};
+		mhOverlayChoice->OnClick.Add([refreshMhLabel](UI::EventParams &) {
+			const bool on = g_Config.iDebugOverlay == (int)DebugOverlay::MH_HP;
+			g_Config.iDebugOverlay = on ? (int)DebugOverlay::OFF : (int)DebugOverlay::MH_HP;
+			refreshMhLabel();
+			return UI::EVENT_DONE;
+		});
+		refreshMhLabel();
 	}
 
 	if (g_Config.bAchievementsEnable && Achievements::HasAchievementsOrLeaderboards()) {
