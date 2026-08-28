@@ -22,6 +22,21 @@
 
 ---
 
+## 0. 地址性质与偏移说明（重要）
+
+- 本表全部为 **PSP 虚拟地址**。PSP 内存映射由硬件/系统固定（用户 RAM 基址
+  `0x08800000`），**实体机与 PPSSPP 一致** —— mhp3reload 等 mod 的 MIPS 补丁
+  就是在真机上用这些地址打进去的。
+- **"偏移问题"只存在于"外部工具读模拟器进程内存"**：PPSSPP 把 PSP 内存映射到
+  宿主进程的任意地址，外部工具（原版 Python overlay、Cheat Engine 等）必须再加
+  一个 `base_address` 换算（原版 overlay 用 `SendMessageW(0xB118)` 拿它）。
+- **本项目（内置 overlay）直接以 PSP 虚拟地址读写 `Memory::ReadUnchecked_*`**，
+  PPSSPP 内部完成映射，**不存在任何偏移**。
+- 需要按"游戏版本"区分的：
+  - 原版 `ULJM05800` vs HD `NPJB40001`：EBOOT 布局不同 → 地址不同（本表已双列，
+    "未提供"= 来源 mod 只有该版本实现）。
+  - 同一游戏同版本：实体机 / PPSSPP 地址相同。
+
 ## 1. 怪物数据（最核心）
 
 ### 怪物列表指针（本 overlay 用法）
