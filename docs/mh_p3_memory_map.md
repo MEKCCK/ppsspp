@@ -6,13 +6,19 @@
 
 | 标记 | 来源 | 说明 |
 |---|---|---|
-| **[本]** | 本项目（移植自 Alexander-Lancellott/MH-HP-Overlay-For-PSP-Emulator 并经作者 mod 交叉验证） | 我们自己使用的指针表/偏移 |
+| **[orig]** | Alexander-Lancellott/**MH-HP-Overlay-For-PSP-Emulator**（Python 原版 overlay 项目） | 指针表与结构偏移的真正来源；本项目仅移植/集成，无原创 |
 | **[load]** | Kurogami2134/mhp3reload loader 汇编（src/*.asm） | 模组加载器钩子 |
 | **[modman]** | Kurogami2134/p3rdml_modman | 模组管理器部署配置 |
 | **[hpbar]** | Kurogami2134/mhp3rd_monster_hp_bar | 怪物血条 mod |
 | **[dmg]** | Kurogami2134/mhp3rd_dmg_numbers | 伤害数字 mod |
 | **[sharp]** | Kurogami2134/p3rd_sharpness_indicator | 斩味指示 mod |
 | **[item]** | Kurogami2134/p3rd_item_sets | 道具套装 mod |
+| **[val]** | 本项目（MEKCCK/ppsspp 内置 overlay） | 仅做**交叉验证/集成**，不产生新地址 |
+
+> 声明：本表所有内存知识均来自上述两个原作者的**公开项目**，本项目（PPSSPP 内置
+> overlay）只是把这些已公开的数据**移植进模拟器并交叉核对**，没有一条地址是本项目
+> 原创发现。伤害数字、血条等能力的归属均为 Kurogami2134 的 mhp3rd_dmg_numbers /
+> mhp3rd_monster_hp_bar。
 
 ---
 
@@ -22,9 +28,9 @@
 
 | 游戏 | 列表指针（绝对地址） | 等价写法 | 来源 |
 |---|---|---|---|
-| MHP3rd ULJM05800 | `0x09DA9860` | `0x08800000 + 0x15A9860`（initial_pointer） | **[本]** + **[hpbar]**（`lw a0,(0x9DA9860)` 互证 ✓） |
-| MHP3rd HD NPJB40001 | `0x0A2B0AE0` | `0x08800000 + 0x19B0AE0` | **[本]** |
-| MHP2G/MHFU etc. | 见下"原版项目表" | — | **[本]** |
+| MHP3rd ULJM05800 | `0x09DA9860` | `0x08800000 + 0x15A9860`（initial_pointer） | **[orig]** + **[hpbar]**（`lw a0,(0x9DA9860)` 互证 ✓） |
+| MHP3rd HD NPJB40001 | `0x0A2B0AE0` | `0x08800000 + 0x19B0AE0` | **[orig]** |
+| MHP2G/MHFU etc. | 见下"原版项目表" | — | **[orig]** |
 
 怪物列表：`指针[0..9]`（每项 4 字节），非零即现存怪物 → 怪物结构体。
 
@@ -32,15 +38,15 @@
 
 | 偏移 | 字段 | 来源 |
 |---|---|---|
-| `+0x62` | 怪物名（1 字节，索引到怪表） | **[本]** |
-| `+0x246` | **当前 HP（u16/u32）** | **[本]** + **[hpbar]**（`lh a1,0x246(a0)` ✓） |
-| `+0x288` | **最大 HP** | **[本]** + **[hpbar]**（`lh a2,0x288(a0)` ✓） |
-| `+0xD4` | 尺寸倍率（u16） | **[本]** |
-| `+0x23C/+0x252` | 毒 当前/阈值 | **[本]** |
-| `+0x24E/+0x24C` | 眠 当前/阈值 | **[本]** |
-| `+0x25A/+0x258` | 麻痹 当前/阈值 | **[本]** |
-| `+0xC5C/+0xC5E` | 眩晕 当前/阈值 | **[本]** |
-| `+0xBC8` | 怒计时（u16，/60=秒） | **[本]** |
+| `+0x62` | 怪物名（1 字节，索引到怪表） | **[orig]** |
+| `+0x246` | **当前 HP（u16/u32）** | **[orig]** + **[hpbar]**（`lh a1,0x246(a0)` ✓） |
+| `+0x288` | **最大 HP** | **[orig]** + **[hpbar]**（`lh a2,0x288(a0)` ✓） |
+| `+0xD4` | 尺寸倍率（u16） | **[orig]** |
+| `+0x23C/+0x252` | 毒 当前/阈值 | **[orig]** |
+| `+0x24E/+0x24C` | 眠 当前/阈值 | **[orig]** |
+| `+0x25A/+0x258` | 麻痹 当前/阈值 | **[orig]** |
+| `+0xC5C/+0xC5E` | 眩晕 当前/阈值 | **[orig]** |
+| `+0xBC8` | 怒计时（u16，/60=秒） | **[orig]** |
 
 > 待挖：怪物坐标 x/y/z（伤害飘字、小地图需要）—— 从结构体附近或 `0x0886xxxx` 代码区引用它的地方找。
 
@@ -48,7 +54,7 @@
 
 见 `UI/monster_tables.inc`（MHF/MHFU/MHP3RD 三代，来自原版项目生成）。
 
-### 其他游戏版本指针表（[本]，来自 MH-HP-Overlay 项目）
+### 其他游戏版本指针表（[orig]，Alexander-Lancellott 的 Python 原版 overlay 项目，本项目仅移植）
 
 | 游戏/Disc | initial_pointer | 名/HP/最大HP/尺寸 偏移 | 状态 毒/眠/麻/晕/怒 |
 |---|---|---|---|
@@ -118,7 +124,7 @@
 
 ---
 
-## 7. 交叉验证记录
+## 7. 交叉验证记录（[val] 本项目所做工作的全部内容）
 
 - `0x09DA9860`（hpbar 怪物列表指针）== 本项目 `0x08800000 + 0x15A9860` ✅
 - 怪物 HP 偏移 `+0x246`、最大 HP `+0x288`（hpbar）== 本项目 MHP3RD 表 ✅
