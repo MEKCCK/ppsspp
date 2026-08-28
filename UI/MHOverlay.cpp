@@ -248,6 +248,13 @@ static const MHGame *FindGame() {
 	return nullptr;
 }
 
+bool MHOverlay_SupportsCurrentGame() {
+	if (!PSP_IsInited()) {
+		return false;
+	}
+	return FindGame() != nullptr;
+}
+
 // ---------------------------------------------------------------------------
 // Reading monsters (PSP virtual addresses, no host offset needed - unlike the
 // PC overlay which had to map them through the emulator process base).
