@@ -12,3 +12,7 @@
 //
 // Wired into the "Debug overlay" developer setting (DebugOverlay::MH_HP).
 void DrawMHOverlay(UIContext *ctx, const Bounds &bounds);
+
+// True if the currently booted game is supported by the MH HP overlay.
+// Used by UI code to show a quick toggle only for supported games.
+bool MHOverlay_SupportsCurrentGame();
