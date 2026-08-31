@@ -380,6 +380,49 @@ struct MHOverlaySettings {
 static MHOverlaySettings g_mhSettings;
 static int g_settingsReloadCounter = 0;
 
+static bool MhIniGet(std::string_view key, int type, Section *sec, void *out) {
+	// Exact match first.
+	bool ok = false;
+	switch (type) {
+	case 0: ok = sec->Get(key, (std::string *)out); break;
+	case 1: ok = sec->Get(key, (bool *)out); break;
+	case 2: ok = sec->Get(key, (float *)out); break;
+	}
+	if (ok) return true;
+	// Case-insensitive fallback on all keys.
+	std::vector<std::string> keys;
+	if (!sec->GetKeys(&keys)) return false;
+	std::string lower = std::string(key);
+	for (char &c : lower) c = (char)tolower((unsigned char)c);
+	for (const std::string &k : keys) {
+		std::string kl = k;
+		for (char &c : kl) c = (char)tolower((unsigned char)c);
+		if (kl == lower) {
+			switch (type) {
+			case 0: return sec->Get(k, (std::string *)out);
+			case 1: return sec->Get(k, (bool *)out);
+			case 2: return sec->Get(k, (float *)out);
+			}
+		}
+	}
+	return false;
+}
+#define MH_GET_STR(section, key, out) MhIniGet(key, 0, section, out)
+#define MH_GET_BOOL(section, key, out) MhIniGet(key, 1, section, out)
+#define MH_GET_FLOAT(section, key, out) MhIniGet(key, 2, section, out)
+
+// Case-insensitive section lookup ('General' == 'general').
+static Section *MhIniSection(IniFile &ini) {
+	for (Section *sec : ini.Sections()) {
+		std::string n = sec->name();
+		for (char &c : n) c = (char)tolower((unsigned char)c);
+		if (n == "general") {
+			return sec;
+		}
+	}
+	return ini.GetOrCreateSection("General");
+}
+
 // Looks for mh_overlay.ini in the memory stick AND the internal data directory
 // (on Android these can differ). Returns the path actually used for loading.
 static Path FindMhOverlayIni() {
@@ -405,23 +448,23 @@ static void LoadSettings() {
 	MHOverlaySettings s{};
 	bool loaded = ini.Load(iniPath);
 	if (loaded) {
-		Section *general = ini.GetOrCreateSection("General");
+		Section *general = MhIniSection(ini);
 		std::string position;
-		if (general->Get("Position", &position)) {
+		if (MH_GET_STR(general, "Position", &position)) {
 			if (position == "top_left") s.position = MHOverlayPosition::TOP_LEFT;
 			else if (position == "bottom_right") s.position = MHOverlayPosition::BOTTOM_RIGHT;
 			else if (position == "bottom_left") s.position = MHOverlayPosition::BOTTOM_LEFT;
 			else s.position = MHOverlayPosition::TOP_RIGHT;
 		}
-		general->Get("FontScale", &s.fontScale);
+		MH_GET_FLOAT(general, "FontScale", &s.fontScale);
 		if (s.fontScale < 0.4f) s.fontScale = 0.4f;
 		if (s.fontScale > 2.0f) s.fontScale = 2.0f;
-		general->Get("ShowInitialHp", &s.showInitialHp);
-		general->Get("ShowHpPercentage", &s.showHpPercentage);
-		general->Get("ShowSmallMonsters", &s.showSmallMonsters);
-		general->Get("ShowSizeMultiplier", &s.showSizeMultiplier);
-		general->Get("ShowCrown", &s.showCrown);
-		general->Get("ShowAbnormalStatus", &s.showAbnormalStatus);
+		MH_GET_BOOL(general, "ShowInitialHp", &s.showInitialHp);
+		MH_GET_BOOL(general, "ShowHpPercentage", &s.showHpPercentage);
+		MH_GET_BOOL(general, "ShowSmallMonsters", &s.showSmallMonsters);
+		MH_GET_BOOL(general, "ShowSizeMultiplier", &s.showSizeMultiplier);
+		MH_GET_BOOL(general, "ShowCrown", &s.showCrown);
+		MH_GET_BOOL(general, "ShowAbnormalStatus", &s.showAbnormalStatus);
 	}
 	// One-time visible hint about the path we are reading (or failing to read).
 	static bool alreadyNotified = false;
