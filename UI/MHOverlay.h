@@ -16,3 +16,7 @@ void DrawMHOverlay(UIContext *ctx, const Bounds &bounds);
 // True if the currently booted game is supported by the MH HP overlay.
 // Used by UI code to show a quick toggle only for supported games.
 bool MHOverlay_SupportsCurrentGame();
+
+// Corner preset (0..3): TopRight/TopLeft/BottomRight/BottomLeft, persisted in ppsspp.ini.
+int MHOverlay_GetPosition();
+void MHOverlay_SetPosition(int position);
