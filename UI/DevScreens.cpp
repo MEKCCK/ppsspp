@@ -99,6 +99,7 @@ static const char *g_debugOverlayList[] = {
 	"GPU Profile",
 	"GPU Allocator Viewer",
 	"Framebuffer list",
+	"Monster Hunter HP",
 };
 
 void AddOverlayList(UI::ViewGroup *items, ScreenManager *screenManager) {
