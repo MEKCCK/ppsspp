@@ -675,6 +675,25 @@ void GamePauseScreen::CreateViews() {
 		refreshMhLabel();
 	}
 
+	// Corner preset selector for the MH HP overlay (TopRight/TopLeft/BottomRight/BottomLeft).
+	{
+		auto pa = GetI18NCategory(I18NCat::PAUSE);
+		Choice *mhPosChoice = rightColumnItems->Add(new Choice(pa->T("MH Pos")));
+		const auto refreshMhPos = [mhPosChoice] {
+			switch (MHOverlay_GetPosition()) {
+			case 0: mhPosChoice->SetText("MH Pos: TopRight"); break;
+			case 1: mhPosChoice->SetText("MH Pos: TopLeft"); break;
+			case 2: mhPosChoice->SetText("MH Pos: BottomRight"); break;
+			default: mhPosChoice->SetText("MH Pos: BottomLeft"); break;
+			}
+		};
+		mhPosChoice->OnClick.Add([refreshMhPos](UI::EventParams &) {
+			MHOverlay_SetPosition((MHOverlay_GetPosition() + 1) % 4);
+			refreshMhPos();
+		});
+		refreshMhPos();
+	}
+
 	if (g_Config.bAchievementsEnable && Achievements::HasAchievementsOrLeaderboards()) {
 		rightColumnItems->Add(new Choice(ac->T("Achievements"), ImageID("I_ACHIEVEMENT")))->OnClick.Add([this](UI::EventParams &e) {
 			screenManager()->push(new RetroAchievementsListScreen(gamePath_));
