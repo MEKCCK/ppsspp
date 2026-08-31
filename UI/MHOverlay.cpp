@@ -257,6 +257,18 @@ bool MHOverlay_SupportsCurrentGame() {
 	return FindGame() != nullptr;
 }
 
+int MHOverlay_GetPosition() {
+	return g_Config.iMHOverlayPosition;
+}
+
+void MHOverlay_SetPosition(int position) {
+	if (position < 0 || position > 3) {
+		return;
+	}
+	g_Config.iMHOverlayPosition = position;
+	g_Config.Save("MHOverlay");
+}
+
 // ---------------------------------------------------------------------------
 // Reading monsters (PSP virtual addresses, no host offset needed - unlike the
 // PC overlay which had to map them through the emulator process base).
@@ -337,14 +349,9 @@ static void ReadMonsters(const MHGame &game, std::vector<MHMonster> &out) {
 // Formatting & rendering
 // ---------------------------------------------------------------------------
 
-// Visual defaults, mirroring the PC overlay's config.ini. All of these can be
-// overridden at runtime by editing mh_overlay.ini on the memory stick - no
-// rebuild needed. Example:
-//   [General]
-//   Position = bottom_left      ; top_right | top_left | bottom_right | bottom_left
-//   FontScale = 0.9
-//   ShowSmallMonsters = true
-//   ShowAbnormalStatus = true
+// Visual defaults, matching the PC overlay's config.ini defaults.
+// Corner preset is chosen in the pause-menu (MH Pos) and persisted in ppsspp.ini.
+//
 static constexpr bool kDefaultShowInitialHp = true;
 static constexpr bool kDefaultShowHpPercentage = true;
 static constexpr bool kDefaultShowSmallMonsters = true;
@@ -378,38 +385,7 @@ struct MHOverlaySettings {
 };
 
 static MHOverlaySettings g_mhSettings;
-static int g_settingsReloadCounter = 0;
 
-static bool MhIniGet(std::string_view key, int type, Section *sec, void *out) {
-	// Exact match first.
-	bool ok = false;
-	switch (type) {
-	case 0: ok = sec->Get(key, (std::string *)out); break;
-	case 1: ok = sec->Get(key, (bool *)out); break;
-	case 2: ok = sec->Get(key, (float *)out); break;
-	}
-	if (ok) return true;
-	// Case-insensitive fallback on all keys.
-	std::vector<std::string> keys;
-	if (!sec->GetKeys(&keys)) return false;
-	std::string lower = std::string(key);
-	for (char &c : lower) c = (char)tolower((unsigned char)c);
-	for (const std::string &k : keys) {
-		std::string kl = k;
-		for (char &c : kl) c = (char)tolower((unsigned char)c);
-		if (kl == lower) {
-			switch (type) {
-			case 0: return sec->Get(k, (std::string *)out);
-			case 1: return sec->Get(k, (bool *)out);
-			case 2: return sec->Get(k, (float *)out);
-			}
-		}
-	}
-	return false;
-}
-#define MH_GET_STR(section, key, out) MhIniGet(key, 0, section, out)
-#define MH_GET_BOOL(section, key, out) MhIniGet(key, 1, section, out)
-#define MH_GET_FLOAT(section, key, out) MhIniGet(key, 2, section, out)
 
 // Case-insensitive section lookup ('General' == 'general').
 static Section *MhIniSection(IniFile &ini) {
@@ -421,61 +397,6 @@ static Section *MhIniSection(IniFile &ini) {
 		}
 	}
 	return ini.GetOrCreateSection("General");
-}
-
-// Looks for mh_overlay.ini in the memory stick AND the internal data directory
-// (on Android these can differ). Returns the path actually used for loading.
-static Path FindMhOverlayIni() {
-	Path candidates[2] = {
-		g_Config.memStickDirectory / "mh_overlay.ini",
-		g_Config.internalDataDirectory / "mh_overlay.ini",
-	};
-	for (const Path &c : candidates) {
-		if (File::Exists(c)) {
-			return c;
-		}
-	}
-	// Return the primary candidate even if missing, so we can show its path.
-	return candidates[0];
-}
-
-// Reloaded from mh_overlay.ini every 2 seconds (on first draw too). Cheap -
-// missing/empty file just keeps the defaults. We toast once which path we
-// looked at, so it's easy to place the file correctly.
-static void LoadSettings() {
-	const Path iniPath = FindMhOverlayIni();
-	IniFile ini;
-	MHOverlaySettings s{};
-	bool loaded = ini.Load(iniPath);
-	if (loaded) {
-		Section *general = MhIniSection(ini);
-		std::string position;
-		if (MH_GET_STR(general, "Position", &position)) {
-			if (position == "top_left") s.position = MHOverlayPosition::TOP_LEFT;
-			else if (position == "bottom_right") s.position = MHOverlayPosition::BOTTOM_RIGHT;
-			else if (position == "bottom_left") s.position = MHOverlayPosition::BOTTOM_LEFT;
-			else s.position = MHOverlayPosition::TOP_RIGHT;
-		}
-		MH_GET_FLOAT(general, "FontScale", &s.fontScale);
-		if (s.fontScale < 0.4f) s.fontScale = 0.4f;
-		if (s.fontScale > 2.0f) s.fontScale = 2.0f;
-		MH_GET_BOOL(general, "ShowInitialHp", &s.showInitialHp);
-		MH_GET_BOOL(general, "ShowHpPercentage", &s.showHpPercentage);
-		MH_GET_BOOL(general, "ShowSmallMonsters", &s.showSmallMonsters);
-		MH_GET_BOOL(general, "ShowSizeMultiplier", &s.showSizeMultiplier);
-		MH_GET_BOOL(general, "ShowCrown", &s.showCrown);
-		MH_GET_BOOL(general, "ShowAbnormalStatus", &s.showAbnormalStatus);
-	}
-	// One-time visible hint about the path we are reading (or failing to read).
-	static bool alreadyNotified = false;
-	if (!alreadyNotified) {
-		alreadyNotified = true;
-		INFO_LOG(Log::UI, "MH overlay ini: %s (%s)", iniPath.ToCString(), loaded ? "loaded" : "NOT FOUND - using defaults");
-		if (!loaded) {
-			System_Toast("MH overlay: put mh_overlay.ini at " + iniPath.ToString());
-		}
-	}
-	g_mhSettings = s;
 }
 
 static const char *LocalizedName(const char *english, bool useChinese) {
@@ -617,9 +538,8 @@ void DrawMHOverlay(UIContext *ctx, const Bounds &bounds) {
 		return;
 	}
 
-	if (g_settingsReloadCounter++ % 120 == 0) {
-		LoadSettings();
-	}
+
+	g_mhSettings.position = (MHOverlayPosition)(g_Config.iMHOverlayPosition & 3);
 
 	std::vector<MHMonster> monsters;
 	ReadMonsters(*game, monsters);
