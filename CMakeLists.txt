@@ -1614,6 +1614,8 @@ list(APPEND NativeAppSource
 	UI/BaseScreens.cpp
 	UI/DebugOverlay.cpp
 	UI/DebugOverlay.h
+	UI/MHOverlay.cpp
+	UI/MHOverlay.h
 	UI/DevScreens.cpp
 	UI/DevScreens.h
 	UI/DisplayLayoutScreen.cpp
