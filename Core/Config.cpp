@@ -296,6 +296,7 @@ static const ConfigSetting generalSettings[] = {
 	ConfigSetting("CompressSymbols", SETTING(g_Config, bCompressSymbols), true, CfgFlag::DEFAULT),
 	ConfigSetting("CacheFullIsoInRam", SETTING(g_Config, bCacheFullIsoInRam), false, CfgFlag::PER_GAME),
 	ConfigSetting("RemoteISOPort", SETTING(g_Config, iRemoteISOPort), 0, CfgFlag::DEFAULT),
+	ConfigSetting("MHOverlayPosition", SETTING(g_Config, iMHOverlayPosition), 3, CfgFlag::DEFAULT),
 	ConfigSetting("LastRemoteISOServer", SETTING(g_Config, sLastRemoteISOServer), "", CfgFlag::DEFAULT),
 	ConfigSetting("LastRemoteISOPort", SETTING(g_Config, iLastRemoteISOPort), 0, CfgFlag::DEFAULT),
 	ConfigSetting("RemoteISOManualConfig", SETTING(g_Config, bRemoteISOManual), false, CfgFlag::DEFAULT),
