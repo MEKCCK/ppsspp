@@ -242,6 +242,7 @@ public:
 	bool bCompressSymbols;
 	bool bCacheFullIsoInRam;
 	int iRemoteISOPort; // Also used for serving a local remote debugger.
+	int iMHOverlayPosition = 3; // 0..3 = MH HP overlay corner preset (TR/TL/BR/BL)
 	std::string sLastRemoteISOServer;
 	int iLastRemoteISOPort;
 	bool bRemoteISOManual;
