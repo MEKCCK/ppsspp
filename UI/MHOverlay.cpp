@@ -339,7 +339,7 @@ static void ReadMonsters(const MHGame &game, std::vector<MHMonster> &out) {
 // overridden at runtime by editing mh_overlay.ini on the memory stick - no
 // rebuild needed. Example:
 //   [General]
-//   Position = top_right        ; top_right | top_left | bottom_right | bottom_left
+//   Position = bottom_left      ; top_right | top_left | bottom_right | bottom_left
 //   FontScale = 0.9
 //   ShowSmallMonsters = true
 //   ShowAbnormalStatus = true
@@ -365,7 +365,7 @@ enum class MHOverlayPosition {
 };
 
 struct MHOverlaySettings {
-	MHOverlayPosition position = MHOverlayPosition::TOP_RIGHT;
+	MHOverlayPosition position = MHOverlayPosition::BOTTOM_LEFT;
 	float fontScale = kDefaultFontScale;
 	bool showInitialHp = kDefaultShowInitialHp;
 	bool showHpPercentage = kDefaultShowHpPercentage;
@@ -390,7 +390,7 @@ static void LoadSettings() {
 			if (position == "top_left") s.position = MHOverlayPosition::TOP_LEFT;
 			else if (position == "bottom_right") s.position = MHOverlayPosition::BOTTOM_RIGHT;
 			else if (position == "bottom_left") s.position = MHOverlayPosition::BOTTOM_LEFT;
-			else s.position = MHOverlayPosition::TOP_RIGHT;
+			else s.position = MHOverlayPosition::BOTTOM_LEFT;
 		}
 		general->Get("FontScale", &s.fontScale);
 		if (s.fontScale < 0.4f) s.fontScale = 0.4f;
