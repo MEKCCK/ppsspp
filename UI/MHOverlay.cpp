@@ -11,6 +11,8 @@
 #include "Common/Data/Format/IniFile.h"
 #include "Common/Data/Text/I18n.h"
 #include "Common/File/Path.h"
+#include "Common/File/FileUtil.h"
+#include "Common/Log/Log.h"
 #include "Core/Config.h"
 #include "Common/Render/DrawBuffer.h"
 #include "Common/Render/Text/draw_text.h"
@@ -378,19 +380,38 @@ struct MHOverlaySettings {
 static MHOverlaySettings g_mhSettings;
 static int g_settingsReloadCounter = 0;
 
-// Reloaded from mh_overlay.ini on the memory stick every 2 seconds (on first
-// draw too). Cheap - missing/empty file just keeps the defaults.
+// Looks for mh_overlay.ini in the memory stick AND the internal data directory
+// (on Android these can differ). Returns the path actually used for loading.
+static Path FindMhOverlayIni() {
+	Path candidates[2] = {
+		g_Config.memStickDirectory / "mh_overlay.ini",
+		g_Config.internalDataDirectory / "mh_overlay.ini",
+	};
+	for (const Path &c : candidates) {
+		if (File::Exists(c)) {
+			return c;
+		}
+	}
+	// Return the primary candidate even if missing, so we can show its path.
+	return candidates[0];
+}
+
+// Reloaded from mh_overlay.ini every 2 seconds (on first draw too). Cheap -
+// missing/empty file just keeps the defaults. We toast once which path we
+// looked at, so it's easy to place the file correctly.
 static void LoadSettings() {
+	const Path iniPath = FindMhOverlayIni();
 	IniFile ini;
 	MHOverlaySettings s{};
-	if (ini.Load(g_Config.memStickDirectory / "mh_overlay.ini")) {
+	bool loaded = ini.Load(iniPath);
+	if (loaded) {
 		Section *general = ini.GetOrCreateSection("General");
 		std::string position;
 		if (general->Get("Position", &position)) {
 			if (position == "top_left") s.position = MHOverlayPosition::TOP_LEFT;
 			else if (position == "bottom_right") s.position = MHOverlayPosition::BOTTOM_RIGHT;
 			else if (position == "bottom_left") s.position = MHOverlayPosition::BOTTOM_LEFT;
-			else s.position = MHOverlayPosition::BOTTOM_LEFT;
+			else s.position = MHOverlayPosition::TOP_RIGHT;
 		}
 		general->Get("FontScale", &s.fontScale);
 		if (s.fontScale < 0.4f) s.fontScale = 0.4f;
@@ -401,6 +422,15 @@ static void LoadSettings() {
 		general->Get("ShowSizeMultiplier", &s.showSizeMultiplier);
 		general->Get("ShowCrown", &s.showCrown);
 		general->Get("ShowAbnormalStatus", &s.showAbnormalStatus);
+	}
+	// One-time visible hint about the path we are reading (or failing to read).
+	static bool alreadyNotified = false;
+	if (!alreadyNotified) {
+		alreadyNotified = true;
+		INFO_LOG(Log::UI, "MH overlay ini: %s (%s)", iniPath.ToCString(), loaded ? "loaded" : "NOT FOUND - using defaults");
+		if (!loaded) {
+			System_Toast("MH overlay: put mh_overlay.ini at " + iniPath.ToString());
+		}
 	}
 	g_mhSettings = s;
 }
