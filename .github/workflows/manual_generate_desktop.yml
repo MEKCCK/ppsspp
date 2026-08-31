@@ -1,0 +1,69 @@
+name: Manual Generate Desktop Builds
+on:
+  workflow_dispatch:
+
+jobs:
+  linux:
+    name: Linux (tar.gz)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build build-essential qt6-base-dev libsdl2-dev libglew-dev \
+              libzip-dev libpng-dev libzstd-dev libgl1-mesa-dev libssl-dev pkg-config
+
+      - name: Configure & build
+        run: |
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DUSE_FFMPEG=OFF
+          cmake --build build -j$(nproc)
+
+      - name: Package
+        run: |
+          mkdir -p dist/PPSSPP-linux
+          cp -p build/PPSSPP dist/PPSSPP-linux/ 2>/dev/null || cp -p build/bin/PPSSPP dist/PPSSPP-linux/
+          cp -r assets dist/PPSSPP-linux/ 2>/dev/null || true
+          ldd dist/PPSSPP-linux/PPSSPP | grep -oE '/[^ ]+\.so[^ ]*' | while read f; do
+            [ -f "$f" ] && cp -Ln --parents "$f" dist/PPSSPP-linux/
+          done
+          tar -C dist -czf dist/PPSSPP-linux.tar.gz PPSSPP-linux
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PPSSPP-linux
+          path: dist/PPSSPP-linux.tar.gz
+
+  macos:
+    name: macOS (zip)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Install deps
+        run: brew install cmake ninja sdl2 glew zlib libzip libpng zstd pkg-config
+
+      - name: Configure & build
+        run: |
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DUSE_FFMPEG=OFF \
+                -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0
+          cmake --build build -j$(sysctl -n hw.ncpu)
+
+      - name: Package
+        run: |
+          mkdir -p dist/PPSSPP-macos
+          find build -maxdepth 3 -name 'PPSSPP*' -type f -perm -u+x | head -1
+          cp -p build/PPSSPP dist/PPSSPP-macos/ 2>/dev/null || true
+          cd dist && zip -r PPSSPP-macos.zip PPSSPP-macos >/dev/null
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PPSSPP-macos
+          path: dist/PPSSPP-macos.zip
