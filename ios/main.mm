@@ -412,8 +412,6 @@ bool System_GetPropertyBool(SystemProperty prop) {
 		case SYSPROP_CAN_READ_BATTERY_PERCENTAGE:
 			return true;
 
-		case SYSPROP_HAS_TEXT_INPUT_DIALOG:
-			return true;
 		default:
 			return false;
 	}
@@ -581,37 +579,6 @@ bool System_MakeRequest(SystemRequestType type, int requestId, const std::string
 			[[UIApplication sharedApplication] setIdleTimerDisabled: (param3 ? YES : NO)];
 		});
 		return true;
-	case SystemRequestType::INPUT_TEXT_MODAL:
-	{
-		const std::string title = param1;
-		const std::string defaultValue = param2;
-		const bool passwordMasking = param3 != 0;
-		dispatch_async(dispatch_get_main_queue(), ^{
-			UIViewController *presenter = sharedViewController;
-			if (!presenter) {
-				g_requestManager.PostSystemFailure(requestId, 0);
-				return;
-			}
-			UIAlertController *alert = [UIAlertController alertControllerWithTitle:[NSString stringWithUTF8String:title.c_str()] message:nil preferredStyle:UIAlertControllerStyleAlert];
-			[alert addTextFieldWithConfigurationHandler:^(UITextField *textField) {
-				textField.text = [NSString stringWithUTF8String:defaultValue.c_str()];
-				textField.secureTextEntry = passwordMasking;
-				textField.autocorrectionType = UITextAutocorrectionTypeNo;
-				textField.spellCheckingType = UITextSpellCheckingTypeNo;
-			}];
-			UIAlertAction *cancelAction = [UIAlertAction actionWithTitle:NSLocalizedString(@"Cancel", @"") style:UIAlertActionStyleCancel handler:^(UIAlertAction *action) {
-				g_requestManager.PostSystemFailure(requestId, 0);
-			}];
-			UIAlertAction *okAction = [UIAlertAction actionWithTitle:NSLocalizedString(@"OK", @"") style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
-				NSString *text = alert.textFields.firstObject.text ?: @"";
-				g_requestManager.PostSystemSuccess(requestId, [text UTF8String]);
-			}];
-			[alert addAction:cancelAction];
-			[alert addAction:okAction];
-			[presenter presentViewController:alert animated:YES completion:nil];
-		});
-		return true;
-	}
 	default:
 		break;
 	}
