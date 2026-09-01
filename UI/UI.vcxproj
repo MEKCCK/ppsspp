@@ -65,6 +65,7 @@
     <ClCompile Include="NativeApp.cpp" />
     <ClCompile Include="OnScreenDisplay.cpp" />
     <ClCompile Include="PauseScreen.cpp" />
+<ClCompile Include="MHOverlay.cpp" />
     <ClCompile Include="ProfilerDraw.cpp" />
     <ClCompile Include="RemoteISOScreen.cpp" />
     <ClCompile Include="ReportScreen.cpp" />
@@ -93,6 +94,7 @@
     <ClInclude Include="ControlMappingScreen.h" />
     <ClInclude Include="CustomButtonMappingScreen.h" />
     <ClInclude Include="DebugOverlay.h" />
+<ClInclude Include="MHOverlay.h" />
     <ClInclude Include="DeveloperToolsScreen.h" />
     <ClInclude Include="DevScreens.h" />
     <ClInclude Include="DiscordIntegration.h" />
