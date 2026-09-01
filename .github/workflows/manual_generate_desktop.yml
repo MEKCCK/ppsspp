@@ -4,7 +4,7 @@ on:
 
 jobs:
   linux:
-    name: Linux (tar.gz)
+    name: Linux (AppImage)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -16,30 +16,27 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y cmake ninja-build build-essential qt6-base-dev libsdl2-dev libglew-dev \
-              libzip-dev libpng-dev libzstd-dev libgl1-mesa-dev libssl-dev pkg-config
+              libzip-dev libpng-dev libzstd-dev libgl1-mesa-dev libssl-dev pkg-config wget
 
       - name: Configure & build
         run: |
           cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DUSE_FFMPEG=OFF
           cmake --build build -j$(nproc)
 
-      - name: Package
+      - name: Make AppImage (official script)
         run: |
-          mkdir -p dist/PPSSPP-linux
-          cp -p build/PPSSPP dist/PPSSPP-linux/ 2>/dev/null || cp -p build/bin/PPSSPP dist/PPSSPP-linux/
-          cp -r assets dist/PPSSPP-linux/ 2>/dev/null || true
-          ldd dist/PPSSPP-linux/PPSSPP | grep -oE '/[^ ]+\.so[^ ]*' | while read f; do
-            [ -f "$f" ] && cp -Ln --parents "$f" dist/PPSSPP-linux/
-          done
-          tar -C dist -czf dist/PPSSPP-linux.tar.gz PPSSPP-linux
+          cp -r assets build/assets
+          chmod +x scripts/makeappimage_64-bit.sh
+          VERSION=v1.20.4-mh ./scripts/makeappimage_64-bit.sh
 
-      - uses: actions/upload-artifact@v4
+      - name: Upload
+        uses: actions/upload-artifact@v4
         with:
-          name: PPSSPP-linux
-          path: dist/PPSSPP-linux.tar.gz
+          name: PPSSPP-linux.AppImage
+          path: build/*.AppImage
 
   macos:
-    name: macOS (zip)
+    name: macOS (dmg)
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -56,19 +53,24 @@ jobs:
                 -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0
           cmake --build build -j$(sysctl -n hw.ncpu)
 
-      - name: Package
+      - name: Bundle .app & make .dmg
         run: |
-          mkdir -p dist/PPSSPP-macos
-          find build -maxdepth 3 -name 'PPSSPP*' -type f -perm -u+x | head -1
-          cp -p build/PPSSPP dist/PPSSPP-macos/ 2>/dev/null || true
-          cd dist && zip -r PPSSPP-macos.zip PPSSPP-macos >/dev/null
+          mkdir -p dist/PPSSPP.app/Contents/MacOS dist/PPSSPP.app/Contents/Resources
+          cp build/PPSSPP dist/PPSSPP.app/Contents/MacOS/PPSSPP
+          cp macOS/Info.plist dist/PPSSPP.app/Contents/Info.plist
+          cp -r assets dist/PPSSPP.app/Contents/Resources/
+          chmod +x SDL/macbundle.sh
+          ./SDL/macbundle.sh "$PWD/dist/PPSSPP.app" PPSSPP || true
+          hdiutil create -volname "PPSSPP" -srcfolder dist/PPSSPP.app -ov -format UDZO dist/PPSSPP.dmg
 
-      - uses: actions/upload-artifact@v4
+      - name: Upload
+        uses: actions/upload-artifact@v4
         with:
-          name: PPSSPP-macos
-          path: dist/PPSSPP-macos.zip
+          name: PPSSPP-macos.dmg
+          path: dist/PPSSPP.dmg
+
   windows:
-    name: Windows x64 (zip)
+    name: Windows x64 (exe installer)
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -76,11 +78,11 @@ jobs:
           fetch-depth: 0
           submodules: recursive
 
-      - name: Install deps (vcpkg)
+      - name: Install deps (vcpkg + NSIS)
         shell: bash
         run: |
           vcpkg install sdl2 glew zlib libpng libzip zstd --triplet x64-windows
-          echo "VCPKG_ROOT=C:\\vcpkg" >> $GITHUB_ENV
+          choco install nsis -y
 
       - name: Configure & build
         shell: bash
@@ -89,16 +91,36 @@ jobs:
                 -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake
           cmake --build build --config Release -j%NUMBER_OF_PROCESSORS%
 
-      - name: Package
+      - name: Stage & make installer
         shell: bash
         run: |
-          mkdir -p dist/PPSSPP-win64
-          find build -iname "PPSSPP*.exe" -exec cp {} dist/PPSSPP-win64/ \;
-          cp -r C:/vcpkg/installed/x64-windows/bin/*.dll dist/PPSSPP-win64/ 2>/dev/null || true
-          cd dist && powershell -Command "Compress-Archive -Path PPSSPP-win64 -DestinationPath PPSSPP-win64.zip"
+          mkdir -p dist
+          find build -iname "PPSSPP.exe" -exec cp {} dist/ \;
+          cp -r C:/vcpkg/installed/x64-windows/bin/*.dll dist/ 2>/dev/null || true
+          cat > dist/install.nsi <<'NSI'
+          !include "MUI2.nsh"
+          Name "PPSSPP (MH Overlay)"
+          OutFile "PPSSPP-Setup.exe"
+          InstallDir "$PROGRAMFILES64\\PPSSPP"
+          !insertmacro MUI_PAGE_DIRECTORY
+          !insertmacro MUI_PAGE_INSTFILES
+          !insertmacro MUI_LANGUAGE "SimpChinese"
+          !insertmacro MUI_LANGUAGE "English"
+          Section "Install"
+            SetOutPath "$INSTDIR"
+            File "PPSSPP.exe"
+            File "*.dll"
+            File /r "assets"
+            WriteUninstaller "$INSTDIR\\uninstall.exe"
+          SectionEnd
+          Section "Uninstall"
+            RMDir /r "$INSTDIR"
+          SectionEnd
+          NSI
+          cd dist && "C:/Program Files (x86)/NSIS/makensis.exe" install.nsi
 
-      - uses: actions/upload-artifact@v4
+      - name: Upload
+        uses: actions/upload-artifact@v4
         with:
-          name: PPSSPP-windows-x64
-          path: dist/PPSSPP-win64.zip
-
+          name: PPSSPP-windows-setup.exe
+          path: dist/PPSSPP-Setup.exe
