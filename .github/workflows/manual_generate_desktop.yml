@@ -67,3 +67,38 @@ jobs:
         with:
           name: PPSSPP-macos
           path: dist/PPSSPP-macos.zip
+  windows:
+    name: Windows x64 (zip)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Install deps (vcpkg)
+        shell: bash
+        run: |
+          vcpkg install sdl2 glew zlib libpng libzip zstd --triplet x64-windows
+          echo "VCPKG_ROOT=C:\\vcpkg" >> $GITHUB_ENV
+
+      - name: Configure & build
+        shell: bash
+        run: |
+          cmake -B build -A x64 -DCMAKE_BUILD_TYPE=Release -DUSE_FFMPEG=OFF \
+                -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake
+          cmake --build build --config Release -j%NUMBER_OF_PROCESSORS%
+
+      - name: Package
+        shell: bash
+        run: |
+          mkdir -p dist/PPSSPP-win64
+          find build -iname "PPSSPP*.exe" -exec cp {} dist/PPSSPP-win64/ \;
+          cp -r C:/vcpkg/installed/x64-windows/bin/*.dll dist/PPSSPP-win64/ 2>/dev/null || true
+          cd dist && powershell -Command "Compress-Archive -Path PPSSPP-win64 -DestinationPath PPSSPP-win64.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PPSSPP-windows-x64
+          path: dist/PPSSPP-win64.zip
+
