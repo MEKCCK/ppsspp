@@ -70,7 +70,7 @@ jobs:
           path: dist/PPSSPP.dmg
 
   windows:
-    name: Windows x64 (exe installer)
+    name: Windows x64 (official zip)
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -78,49 +78,32 @@ jobs:
           fetch-depth: 0
           submodules: recursive
 
-      - name: Install deps (vcpkg + NSIS)
+      - name: Add MSBuild to PATH
+        uses: microsoft/setup-msbuild@v3
+
+      - name: Create git-version.cpp
         shell: bash
         run: |
-          vcpkg install sdl2 glew zlib libpng libzip zstd --triplet x64-windows
-          choco install nsis -y
+          echo 'const char *PPSSPP_GIT_VERSION = "v1.20.4-mh";' > git-version.cpp
+          echo '#define PPSSPP_GIT_VERSION_NO_UPDATE 1' >> git-version.cpp
+          echo '#define PPSSPP_WIN_VERSION_STRING "v1.20.4-mh"' > Windows/win-version.h
+          echo '#define PPSSPP_WIN_VERSION_COMMA 1,20,4' >> Windows/win-version.h
+          echo '#define PPSSPP_WIN_VERSION_NO_UPDATE 1' >> Windows/win-version.h
 
-      - name: Configure & build
+      - name: Build (official solution)
+        run: msbuild /m /p:TrackFileAccess=false /p:Configuration=Release /p:Platform=x64 Windows/PPSSPP.sln
+
+      - name: Package (official zip)
         shell: bash
         run: |
-          cmake -B build -A x64 -DCMAKE_BUILD_TYPE=Release -DUSE_FFMPEG=OFF \
-                -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake
-          cmake --build build --config Release -j%NUMBER_OF_PROCESSORS%
+          mkdir -p ppsspp
+          cp PPSSPP*.exe ppsspp/ 2>/dev/null || true
+          cp Windows/x64/Release/*.dll ppsspp/ 2>/dev/null || true
+          cp -r assets ppsspp/assets
+          powershell -Command "Compress-Archive -Path 'ppsspp/*' -DestinationPath 'PPSSPP-Windows-x64.zip'"
 
-      - name: Stage & make installer
-        shell: bash
-        run: |
-          mkdir -p dist
-          find build -iname "PPSSPP.exe" -exec cp {} dist/ \;
-          cp -r C:/vcpkg/installed/x64-windows/bin/*.dll dist/ 2>/dev/null || true
-          cat > dist/install.nsi <<'NSI'
-          !include "MUI2.nsh"
-          Name "PPSSPP (MH Overlay)"
-          OutFile "PPSSPP-Setup.exe"
-          InstallDir "$PROGRAMFILES64\\PPSSPP"
-          !insertmacro MUI_PAGE_DIRECTORY
-          !insertmacro MUI_PAGE_INSTFILES
-          !insertmacro MUI_LANGUAGE "SimpChinese"
-          !insertmacro MUI_LANGUAGE "English"
-          Section "Install"
-            SetOutPath "$INSTDIR"
-            File "PPSSPP.exe"
-            File "*.dll"
-            File /r "assets"
-            WriteUninstaller "$INSTDIR\\uninstall.exe"
-          SectionEnd
-          Section "Uninstall"
-            RMDir /r "$INSTDIR"
-          SectionEnd
-          NSI
-          cd dist && "C:/Program Files (x86)/NSIS/makensis.exe" install.nsi
-
-      - name: Upload
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: PPSSPP-windows-setup.exe
-          path: dist/PPSSPP-Setup.exe
+          name: PPSSPP-Windows-x64 (zip)
+          path: PPSSPP-Windows-x64.zip
+
