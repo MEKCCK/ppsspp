@@ -23,17 +23,18 @@ jobs:
           cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DUSE_FFMPEG=OFF
           cmake --build build -j$(nproc)
 
-      - name: Make AppImage (official script)
+      - name: Package (tar.gz - AppImage tool infra unreliable on runners)
         run: |
-          cp -r assets build/assets
-          chmod +x scripts/makeappimage_64-bit.sh
-          VERSION=v1.20.4-mh ./scripts/makeappimage_64-bit.sh
+          mkdir -p dist/PPSSPP-linux/assets
+          cp -p build/PPSSPP dist/PPSSPP-linux/
+          cp -r assets/* dist/PPSSPP-linux/assets/
+          cd dist && tar -czf PPSSPP-linux.tar.gz PPSSPP-linux
 
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: PPSSPP-linux.AppImage
-          path: build/*.AppImage
+          name: PPSSPP-linux (tar.gz)
+          path: dist/PPSSPP-linux.tar.gz
 
   macos:
     name: macOS (dmg)
