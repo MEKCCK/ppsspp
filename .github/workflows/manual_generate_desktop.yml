@@ -27,7 +27,14 @@ jobs:
         run: |
           cp -r assets build/assets
           chmod +x scripts/makeappimage_64-bit.sh
-          sed 's#./build/PPSSPPSDL#./build/PPSSPP#' scripts/makeappimage_64-bit.sh > scripts/makeappimage_qt.sh
+          # Robust pre-fetch of quick-sharun (raw fails sometimes -> jsdelivr mirror)
+          curl -fsSL --connect-timeout 20 --retry 5 -o ./quick-sharun https://raw.githubusercontent.com/pkgforge-dev/Anylinux-AppImages/refs/heads/main/useful-tools/quick-sharun.sh \
+            || curl -fsSL --connect-timeout 20 --retry 5 -o ./quick-sharun https://cdn.jsdelivr.net/gh/pkgforge-dev/Anylinux-AppImages@main/useful-tools/quick-sharun.sh
+          test -s ./quick-sharun
+          chmod +x ./quick-sharun
+          sed -e 's#./build/PPSSPPSDL#./build/PPSSPP#' \
+              -e 's#wget "$QUICK_SHARUN" -O ./quick-sharun#test -s ./quick-sharun || wget "$QUICK_SHARUN" -O ./quick-sharun#' \
+              scripts/makeappimage_64-bit.sh > scripts/makeappimage_qt.sh
           chmod +x scripts/makeappimage_qt.sh
           timeout 720 bash -c 'VERSION=v1.20.4-mh ./scripts/makeappimage_qt.sh'
 
