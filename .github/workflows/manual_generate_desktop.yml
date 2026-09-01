@@ -23,11 +23,13 @@ jobs:
           cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DUSE_FFMPEG=OFF
           cmake --build build -j$(nproc)
 
-      - name: Make AppImage (official script, bounded)
+      - name: Make AppImage (official script, Qt frontend, bounded)
         run: |
           cp -r assets build/assets
           chmod +x scripts/makeappimage_64-bit.sh
-          timeout 720 bash -c 'VERSION=v1.20.4-mh ./scripts/makeappimage_64-bit.sh'
+          sed 's#./build/PPSSPPSDL#./build/PPSSPP#' scripts/makeappimage_64-bit.sh > scripts/makeappimage_qt.sh
+          chmod +x scripts/makeappimage_qt.sh
+          timeout 720 bash -c 'VERSION=v1.20.4-mh ./scripts/makeappimage_qt.sh'
 
       - name: Upload
         uses: actions/upload-artifact@v4
