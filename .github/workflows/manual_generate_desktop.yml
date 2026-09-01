@@ -4,7 +4,7 @@ on:
 
 jobs:
   linux:
-    name: Linux (AppImage)
+    name: Linux (AppImage - official script)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -16,57 +16,24 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y cmake ninja-build build-essential qt6-base-dev libsdl2-dev libglew-dev \
-              libzip-dev libpng-dev libzstd-dev libgl1-mesa-dev libssl-dev pkg-config file
+              libzip-dev libpng-dev libzstd-dev libgl1-mesa-dev libssl-dev pkg-config wget
 
       - name: Configure & build
         run: |
           cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DUSE_FFMPEG=OFF
           cmake --build build -j$(nproc)
 
-      - name: Prepare AppDir
+      - name: Make AppImage (official script, bounded)
         run: |
-          mkdir -p AppDir/usr/bin AppDir/usr/share/applications AppDir/usr/share/ppsspp/assets \
-                   AppDir/usr/share/icons/hicolor/256x256/apps
-          BIN=$(find build -maxdepth 3 -type f -name 'PPSSPPSDL*' -perm -u+x | head -1)
-          [ -n "$BIN" ] || BIN=$(find build -maxdepth 3 -type f -name 'PPSSPP*' -perm -u+x | head -1)
-          echo "BIN=$BIN"
-          [ -n "$BIN" ] || exit 1
-          cp "$BIN" AppDir/usr/bin/PPSSPP
-          cp -r assets/* AppDir/usr/share/ppsspp/assets/
-          cp icons/hicolor/256x256/apps/ppsspp.png AppDir/usr/share/icons/hicolor/256x256/apps/ 2>/dev/null || true
-          cat > AppDir/usr/share/applications/ppsspp.desktop <<'DESK'
-            [Desktop Entry]
-            Name=PPSSPP (MH Overlay)
-            Exec=PPSSPP
-            Icon=ppsspp
-            Type=Application
-            Categories=Game;Emulator;
-          DESK
-          cat > AppDir/AppRun <<'RUN'
-            #!/bin/sh
-            SELF=$(readlink -f "$0")
-            APPDIR=${SELF%/*}
-            cd "${APPDIR}/usr/share/ppsspp"
-            exec "${APPDIR}/usr/bin/PPSSPP" "$@"
-          RUN
-          chmod +x AppDir/AppRun AppDir/usr/bin/PPSSPP
-
-      - name: Bundle with linuxdeploy (GitHub releases)
-        run: |
-          wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
-          wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
-          chmod +x linuxdeploy-x86_64.AppImage appimagetool-x86_64.AppImage
-          ./linuxdeploy-x86_64.AppImage --appimage-extract-and-run \
-            --appdir AppDir --executable AppDir/usr/bin/PPSSPP \
-            --desktop-file AppDir/usr/share/applications/ppsspp.desktop \
-            --icon-file AppDir/usr/share/icons/hicolor/256x256/apps/ppsspp.png
-          ./appimagetool-x86_64.AppImage --appimage-extract-and-run AppDir PPSSPP-x86_64.AppImage
+          cp -r assets build/assets
+          chmod +x scripts/makeappimage_64-bit.sh
+          timeout 720 bash -c 'VERSION=v1.20.4-mh ./scripts/makeappimage_64-bit.sh'
 
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
           name: PPSSPP-linux.AppImage
-          path: PPSSPP-x86_64.AppImage
+          path: build/*.AppImage
   macos:
     name: macOS (dmg)
     runs-on: macos-latest
