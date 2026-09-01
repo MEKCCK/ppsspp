@@ -27,7 +27,10 @@ jobs:
         run: |
           mkdir -p AppDir/usr/bin AppDir/usr/share/applications AppDir/usr/share/ppsspp/assets \
                    AppDir/usr/share/icons/hicolor/256x256/apps
-          cp build/PPSSPP AppDir/usr/bin/PPSSPP
+          BIN=$(find build -maxdepth 3 -type f \( -name 'PPSSPP' -o -name 'PPSSPPQt' \) -perm -u+x | head -1)
+          [ -n "$BIN" ] || BIN=$(find build -maxdepth 3 -type f -name 'PPSSPP*' -perm -u+x | head -1)
+          echo "BIN=$BIN"
+          cp "$BIN" AppDir/usr/bin/PPSSPP
           cp -r assets/* AppDir/usr/share/ppsspp/assets/
           cp icons/hicolor/256x256/apps/ppsspp.png AppDir/usr/share/icons/hicolor/256x256/apps/ 2>/dev/null || true
           cat > AppDir/usr/share/applications/ppsspp.desktop <<'DESK'
@@ -86,13 +89,13 @@ jobs:
 
       - name: Bundle .app & make .dmg
         run: |
-          mkdir -p dist/PPSSPP.app/Contents/MacOS dist/PPSSPP.app/Contents/Resources
-          cp build/PPSSPP dist/PPSSPP.app/Contents/MacOS/PPSSPP
-          cp macOS/Info.plist dist/PPSSPP.app/Contents/Info.plist
-          cp -r assets dist/PPSSPP.app/Contents/Resources/
-          chmod +x SDL/macbundle.sh
-          ./SDL/macbundle.sh "$PWD/dist/PPSSPP.app" PPSSPP || true
-          hdiutil create -volname "PPSSPP" -srcfolder dist/PPSSPP.app -ov -format UDZO dist/PPSSPP.dmg
+          APP=$(find build -maxdepth 2 -type d -name 'PPSSPP.app' | head -1)
+          echo "APP=$APP"
+          [ -n "$APP" ] || { ls build; exit 1; }
+          mkdir -p "$APP/Contents/Resources"
+          cp -r assets "$APP/Contents/Resources/assets"
+          mkdir -p dist
+          hdiutil create -volname "PPSSPP" -srcfolder "$APP" -ov -format UDZO dist/PPSSPP.dmg
 
       - name: Upload
         uses: actions/upload-artifact@v4
