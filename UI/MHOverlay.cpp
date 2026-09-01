@@ -383,19 +383,6 @@ struct MHOverlaySettings {
 
 static MHOverlaySettings g_mhSettings;
 
-
-// Case-insensitive section lookup ('General' == 'general').
-static Section *MhIniSection(IniFile &ini) {
-	for (Section *sec : ini.Sections()) {
-		std::string n = sec->name();
-		for (char &c : n) c = (char)tolower((unsigned char)c);
-		if (n == "general") {
-			return sec;
-		}
-	}
-	return ini.GetOrCreateSection("General");
-}
-
 static const char *LocalizedName(const char *english, bool useChinese) {
 	if (!useChinese) {
 		return english;
