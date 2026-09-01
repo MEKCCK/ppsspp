@@ -89,11 +89,25 @@ jobs:
 
       - name: Bundle .app & make .dmg
         run: |
-          APP=$(find build -maxdepth 2 -type d -name 'PPSSPP.app' | head -1)
+          echo "--- build listing ---"; find build -maxdepth 3 | head -40
+          APP=$(find build -maxdepth 3 -type d -name 'PPSSPP.app' | head -1)
+          if [ -z "$APP" ]; then
+            BIN=$(find build -maxdepth 3 -type f -perm -u+x -name 'PPSSPP*' | head -1)
+            echo "BIN=$BIN"
+            [ -n "$BIN" ] || { echo "no binary found"; exit 1; }
+            APP=dist/PPSSPP.app
+            mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+            cp "$BIN" "$APP/Contents/MacOS/PPSSPP"
+            cp macOS/Info.plist "$APP/Contents/Info.plist"
+          fi
           echo "APP=$APP"
-          [ -n "$APP" ] || { ls build; exit 1; }
           mkdir -p "$APP/Contents/Resources"
           cp -r assets "$APP/Contents/Resources/assets"
+          chmod +x "$APP/Contents/MacOS/PPSSPP" 2>/dev/null || true
+          if [ -d SDL/macOS/SDL2.framework ]; then
+            chmod +x SDL/macbundle.sh
+            ./SDL/macbundle.sh "$PWD/$APP" PPSSPP || true
+          fi
           mkdir -p dist
           hdiutil create -volname "PPSSPP" -srcfolder "$APP" -ov -format UDZO dist/PPSSPP.dmg
 
