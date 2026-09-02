@@ -15,7 +15,7 @@ jobs:
       - name: Install deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build build-essential qt6-base-dev libsdl2-dev libglew-dev \
+          sudo apt-get install -y cmake ninja-build build-essential qt6-base-dev qt6-svg-dev qt6-tools-dev libsdl2-dev libglew-dev \
               libzip-dev libpng-dev libzstd-dev libgl1-mesa-dev libssl-dev pkg-config wget
 
       - name: Configure & build
@@ -32,7 +32,10 @@ jobs:
             || curl -fsSL --connect-timeout 20 --retry 5 -o ./quick-sharun https://cdn.jsdelivr.net/gh/pkgforge-dev/Anylinux-AppImages@main/useful-tools/quick-sharun.sh
           test -s ./quick-sharun
           chmod +x ./quick-sharun
-          sed -e 's#./build/PPSSPPSDL#./build/PPSSPP#' \
+          # Prefer Qt frontend (build/PPSSPP) if it was built, else fall back to PPSSPPSDL.
+          BIN=$(find build -maxdepth 2 -type f -name 'PPSSPP' -perm -u+x | head -1)
+          if [ -n "$BIN" ]; then SED_TGT='s#./build/PPSSPPSDL#./build/PPSSPP#'; else SED_TGT='s#.*#\0#'; fi
+          sed -e "$SED_TGT" \
               -e 's#wget "$QUICK_SHARUN" -O ./quick-sharun#test -s ./quick-sharun || wget "$QUICK_SHARUN" -O ./quick-sharun#' \
               scripts/makeappimage_64-bit.sh > scripts/makeappimage_qt.sh
           chmod +x scripts/makeappimage_qt.sh
