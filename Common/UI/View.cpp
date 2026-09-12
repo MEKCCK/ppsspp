@@ -1769,6 +1769,7 @@ static std::string ExpandTabsForDisplay(std::string_view line) {
 
 MultilineTextEdit::MultilineTextEdit(std::string_view text, std::string_view title, LayoutParams *layoutParams)
 	: View(layoutParams), title_(title) {
+	// View::CanBeFocused() is already true, so there is nothing to opt into here.
 	buffer_.SetText(std::string(text));
 }
 

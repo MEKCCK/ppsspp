@@ -24,6 +24,13 @@ public class NativeGLSurfaceView extends GLSurfaceView {
 		return NativeTextInput.createInputConnection(this, outAttrs);
 	}
 
+	@Override
+	public boolean onCheckIsTextEditor() {
+		// Without this the IME considers this view not to be a text editor at all and refuses to
+		// connect to it, no matter that it has an input connection.
+		return NativeTextInput.isTextInputActive();
+	}
+
 	@SuppressLint("ClickableViewAccessibility")
 	@Override
 	public boolean onTouchEvent(final MotionEvent ev) {

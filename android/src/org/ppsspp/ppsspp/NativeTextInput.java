@@ -17,7 +17,21 @@ import android.view.inputmethod.InputConnection;
 // Without it the surface view has no input connection at all, so showSoftInput() has nothing to
 // connect to and text (including anything pasted from, or composed by, an IME) is silently lost.
 public final class NativeTextInput {
+	// True while PPSSPP's UI is waiting for text (set from the showKeyboard/hideKeyboard commands).
+	// onCheckIsTextEditor() reports this, so the IME only ever attaches to the surface view when
+	// a text field is actually focused - not when someone opens the keyboard in the middle of a
+	// game.
+	private static volatile boolean textInputActive = false;
+
 	private NativeTextInput() {
+	}
+
+	public static void setTextInputActive(boolean active) {
+		textInputActive = active;
+	}
+
+	public static boolean isTextInputActive() {
+		return textInputActive;
 	}
 
 	public static InputConnection createInputConnection(View target, EditorInfo outAttrs) {

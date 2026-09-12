@@ -22,6 +22,7 @@
 #include "Common/StringUtils.h"
 #include "Common/UI/Notice.h"
 #include "Common/UI/PopupScreens.h"
+#include "Common/UI/Root.h"
 #include "Common/UI/ScreenManager.h"
 #include "Common/UI/ViewGroup.h"
 #include "Core/Config.h"
@@ -73,6 +74,10 @@ void CheatEditScreen::CreateViews() {
 			currentText_ = edit_->GetText();
 		}
 	});
+
+	// Focus the editor right away: this screen exists to edit text, and on Android the focus
+	// notification is what asks the platform for its on-screen keyboard.
+	SetFocusedView(edit_, FocusFlags::CAUSE_SCREEN_CHANGE);
 }
 
 bool CheatEditScreen::key(const KeyInput &key) {
@@ -84,6 +89,8 @@ bool CheatEditScreen::key(const KeyInput &key) {
 }
 
 void CheatEditScreen::onFinish(DialogResult result) {
+	// Let the platform put its on-screen keyboard away.
+	System_NotifyUIEvent(UIEventNotification::DIALOG_CLOSED);
 	// Cheats write straight into emulated memory, so drop translated code on the way out.
 	if (MIPSComp::jit) {
 		MIPSComp::jit->ClearCache();
