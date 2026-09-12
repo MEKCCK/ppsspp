@@ -81,12 +81,33 @@ private:
 	Path filename_;
 };
 
+// 金手指文件的纯文字操作。不依赖 UI，可被单元测试直接覆盖。
+namespace CheatFileText {
+	bool EndsWithNewline(std::string_view text);
+
+	// 以 '\n' 切行。结尾换行不会产生额外的空行（"a\nb\n" -> {"a","b"}，"" -> {}，"\n" -> {""}），
+	// 所以 SplitLines() + JoinLines(..., EndsWithNewline(text)) 会还原成原本的字节。
+	std::vector<std::string> SplitLines(std::string_view text);
+	std::string JoinLines(const std::vector<std::string> &lines, bool trailingNewline);
+
+	// 一笔金手指的文字范围：从第 lineNum 行（1-based，_C 那一行）开始，
+	// 到下一个 _C/_S/_G 行之前，或文件结尾。夹在中间的注释与空行都算在内。
+	int BlockEndLine(const std::vector<std::string> &lines, int lineNum);
+	std::vector<std::string> GetCheatBlock(const std::vector<std::string> &lines, int lineNum);
+	bool ReplaceCheatBlock(std::vector<std::string> &lines, int lineNum, const std::vector<std::string> &blockLines);
+	bool RemoveCheatBlock(std::vector<std::string> &lines, int lineNum);
+	void AppendCheatBlock(std::vector<std::string> &lines, const std::vector<std::string> &blockLines);
+}
+
 class CheatFileParser {
 public:
 	CheatFileParser(const Path &filename, std::string_view gameID = "");
 	~CheatFileParser();
 
 	bool Parse();
+	// 直接解析一段文字（语意与 Parse() 一致：跳过首行 BOM、TrimString、同样的长度检查）。
+	// 供 UI 在写回文件前验证编辑后的内容。
+	bool ParseText(std::string_view text);
 
 	const std::vector<std::string> &GetErrors() const { return errors_; }
 	const std::vector<CheatCode> &GetCheats() const { return cheats_; }
@@ -94,8 +115,8 @@ public:
 
 protected:
 	void Flush();
-	void FlushCheatInfo();
 	void AddError(const std::string &msg, int lineNumber);
+	void ParseTrimmedLine(const std::string &line, int lineNumber);
 	void ParseLine(const std::string &line, int lineNumber);
 	void ParseDataLine(const std::string &line, int lineNumber);
 	bool ValidateGameID(std::string_view gameID);

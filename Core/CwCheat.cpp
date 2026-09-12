@@ -65,30 +65,22 @@ CheatFileParser::~CheatFileParser() {
 }
 
 bool CheatFileParser::Parse() {
-	// Ugh, using a member variable as loop counter is bad.
-	for (int lineNumber = 1; fp_ && !feof(fp_); ++lineNumber) {
+	if (!fp_)
+		return false;
+
+	int lineNumber = 0;
+	while (!feof(fp_)) {
 		char temp[2048];
 		char *tempLine = fgets(temp, sizeof(temp), fp_);
 		if (!tempLine)
 			continue;
 
+		++lineNumber;
 		// Detect UTF-8 BOM sequence, and ignore it.
 		if (lineNumber == 1 && memcmp(tempLine, "\xEF\xBB\xBF", 3) == 0)
 			tempLine += 3;
-		std::string line = TrimString(tempLine);
 
-		// Minimum length 5 is shortest possible _ lines name of the game "_G N+"
-		// and a minimum of 1 displayable character in cheat name string "_C0 1"
-		// which both equal to 5 characters.
-		if (line.length() >= 5 && line[0] == '_') {
-			ParseLine(line, lineNumber);
-		} else if (line.length() >= 2 && line[0] == '/' && line[1] == '/') {
-			// Comment, ignore.
-		} else if (line.length() >= 1 && line[0] == '#') {
-			// Comment, ignore.
-		} else if (line.length() > 0) {
-			errors_.push_back(StringFromFormat("Unrecognized content on line %d: expecting _", lineNumber));
-		}
+		ParseTrimmedLine(TrimString(tempLine), lineNumber);
 	}
 
 	Flush();
@@ -96,16 +88,53 @@ bool CheatFileParser::Parse() {
 	return errors_.empty();
 }
 
-void CheatFileParser::Flush() {
-	if (!pendingLines_.empty()) {
-		cheats_.push_back(CheatCode{lastCheatInfo_.name, pendingLines_});
-		FlushCheatInfo();
-		pendingLines_.clear();
+bool CheatFileParser::ParseText(std::string_view text) {
+	int lineNumber = 0;
+	size_t pos = 0;
+	for (;;) {
+		size_t end = text.find('\n', pos);
+		std::string_view line = end == std::string_view::npos ? text.substr(pos) : text.substr(pos, end - pos);
+		++lineNumber;
+
+		// Detect UTF-8 BOM sequence, and ignore it.
+		if (lineNumber == 1 && line.size() >= 3 && memcmp(line.data(), "\xEF\xBB\xBF", 3) == 0)
+			line.remove_prefix(3);
+
+		ParseTrimmedLine(TrimString(line), lineNumber);
+
+		if (end == std::string_view::npos)
+			break;
+		pos = end + 1;
+	}
+
+	Flush();
+
+	return errors_.empty();
+}
+
+void CheatFileParser::ParseTrimmedLine(const std::string &line, int lineNumber) {
+	// Minimum length 5 is shortest possible _ lines name of the game "_G N+"
+	// and a minimum of 1 displayable character in cheat name string "_C0 1"
+	// which both equal to 5 characters.
+	if (line.length() >= 5 && line[0] == '_') {
+		ParseLine(line, lineNumber);
+	} else if (line.length() >= 2 && line[0] == '/' && line[1] == '/') {
+		// Comment, ignore.
+	} else if (line.length() >= 1 && line[0] == '#') {
+		// Comment, ignore.
+	} else if (line.length() > 0) {
+		errors_.push_back(StringFromFormat("Unrecognized content on line %d: expecting _", lineNumber));
 	}
 }
 
-void CheatFileParser::FlushCheatInfo() {
+void CheatFileParser::Flush() {
+	// Push the info even when the cheat has no _L lines - otherwise such a cheat
+	// never shows up in FileInfo(), which means the UI cannot see or edit it.
 	if (lastCheatInfo_.lineNum != 0) {
+		if (!pendingLines_.empty()) {
+			cheats_.push_back(CheatCode{lastCheatInfo_.name, pendingLines_});
+			pendingLines_.clear();
+		}
 		cheatInfo_.push_back(lastCheatInfo_);
 		lastCheatInfo_ = { 0 };
 	}
@@ -189,7 +218,8 @@ void CheatFileParser::ParseDataLine(const std::string &line, int lineNumber) {
 	}
 
 	if (!cheatEnabled_) {
-		FlushCheatInfo();
+		// Disabled cheat: its _L lines are not executed, but it still counts as one
+		// cheat entry (the enabled flag comes from the _C line itself).
 		return;
 	}
 
@@ -1210,3 +1240,105 @@ bool DetectCheatPostComment(std::string_view name, std::string_view *comment) {
 	*comment = std::string_view(name.data() + firstOffset + 5, secondOffset - (firstOffset + 5));
 	return true;
 }
+
+namespace CheatFileText {
+
+bool EndsWithNewline(std::string_view text) {
+	return !text.empty() && text.back() == '\n';
+}
+
+std::vector<std::string> SplitLines(std::string_view text) {
+	std::vector<std::string> lines;
+	if (text.empty()) {
+		return lines;
+	}
+
+	size_t pos = 0;
+	for (;;) {
+		size_t end = text.find('\n', pos);
+		if (end == std::string_view::npos) {
+			lines.emplace_back(text.substr(pos));
+			break;
+		}
+		lines.emplace_back(text.substr(pos, end - pos));
+		pos = end + 1;
+		// A trailing newline does not create an extra empty line.
+		if (pos == text.size()) {
+			break;
+		}
+	}
+	return lines;
+}
+
+std::string JoinLines(const std::vector<std::string> &lines, bool trailingNewline) {
+	std::string out;
+	for (size_t i = 0; i < lines.size(); ++i) {
+		out += lines[i];
+		if (i + 1 < lines.size() || trailingNewline) {
+			out += '\n';
+		}
+	}
+	return out;
+}
+
+// A new cheat block starts at any _C/_S/_G line (after trimming).
+static bool IsBlockBoundary(std::string_view line) {
+	const std::string trimmed = TrimString(line);
+	return trimmed.size() >= 2 && trimmed[0] == '_' && (trimmed[1] == 'C' || trimmed[1] == 'S' || trimmed[1] == 'G');
+}
+
+int BlockEndLine(const std::vector<std::string> &lines, int lineNum) {
+	const int start = lineNum - 1;
+	if (start < 0 || start >= (int)lines.size()) {
+		return (int)lines.size();
+	}
+	for (int i = start + 1; i < (int)lines.size(); ++i) {
+		if (IsBlockBoundary(lines[i])) {
+			return i;
+		}
+	}
+	return (int)lines.size();
+}
+
+std::vector<std::string> GetCheatBlock(const std::vector<std::string> &lines, int lineNum) {
+	const int start = lineNum - 1;
+	const int end = BlockEndLine(lines, lineNum);
+	if (start < 0 || start >= (int)lines.size() || end < start) {
+		return {};
+	}
+	return std::vector<std::string>(lines.begin() + start, lines.begin() + end);
+}
+
+bool ReplaceCheatBlock(std::vector<std::string> &lines, int lineNum, const std::vector<std::string> &blockLines) {
+	const int start = lineNum - 1;
+	if (start < 0 || start >= (int)lines.size()) {
+		return false;
+	}
+	const int end = BlockEndLine(lines, lineNum);
+	lines.erase(lines.begin() + start, lines.begin() + end);
+	lines.insert(lines.begin() + start, blockLines.begin(), blockLines.end());
+	return true;
+}
+
+bool RemoveCheatBlock(std::vector<std::string> &lines, int lineNum) {
+	const int start = lineNum - 1;
+	if (start < 0 || start >= (int)lines.size()) {
+		return false;
+	}
+	const int end = BlockEndLine(lines, lineNum);
+	lines.erase(lines.begin() + start, lines.begin() + end);
+	return true;
+}
+
+void AppendCheatBlock(std::vector<std::string> &lines, const std::vector<std::string> &blockLines) {
+	if (blockLines.empty()) {
+		return;
+	}
+	// Keep a blank separator line if the file does not already end with one.
+	if (!lines.empty() && !TrimString(lines.back()).empty()) {
+		lines.emplace_back();
+	}
+	lines.insert(lines.end(), blockLines.begin(), blockLines.end());
+}
+
+}  // namespace CheatFileText
