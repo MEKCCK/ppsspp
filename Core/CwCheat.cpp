@@ -1292,12 +1292,19 @@ int BlockEndLine(const std::vector<std::string> &lines, int lineNum) {
 	if (start < 0 || start >= (int)lines.size()) {
 		return (int)lines.size();
 	}
+	int end = (int)lines.size();
 	for (int i = start + 1; i < (int)lines.size(); ++i) {
 		if (IsBlockBoundary(lines[i])) {
-			return i;
+			end = i;
+			break;
 		}
 	}
-	return (int)lines.size();
+	// Blank lines at the end of the range are the layout between cheats, not part of the
+	// cheat: keeping them out means editing one cheat leaves the file looking the same.
+	while (end > start + 1 && TrimString(lines[end - 1]).empty()) {
+		--end;
+	}
+	return end;
 }
 
 std::vector<std::string> GetCheatBlock(const std::vector<std::string> &lines, int lineNum) {
@@ -1327,6 +1334,11 @@ bool RemoveCheatBlock(std::vector<std::string> &lines, int lineNum) {
 	}
 	const int end = BlockEndLine(lines, lineNum);
 	lines.erase(lines.begin() + start, lines.begin() + end);
+	// Drop the blank separator line in front of it too, so removing a cheat does not
+	// leave a double blank line behind.
+	if (start > 0 && start - 1 < (int)lines.size() && TrimString(lines[start - 1]).empty()) {
+		lines.erase(lines.begin() + (start - 1));
+	}
 	return true;
 }
 

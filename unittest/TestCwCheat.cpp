@@ -93,11 +93,12 @@ static bool TestCheatTextBlockExtent() {
 	// The first cheat runs up to the next _C, including the comment and the blank line.
 	EXPECT_EQ_INT(CheatFileText::BlockEndLine(lines, 3), 7);
 	const std::vector<std::string> first = CheatFileText::GetCheatBlock(lines, 3);
-	EXPECT_EQ_INT((int)first.size(), 4);
+	EXPECT_EQ_INT((int)first.size(), 5);
 	EXPECT_EQ_STR(first[0], std::string("_C0 First"));
 	EXPECT_EQ_STR(first[1], std::string("_L 0x00000001 0x00000002"));
 	EXPECT_EQ_STR(first[2], std::string("// note in the middle"));
 	EXPECT_EQ_STR(first[3], std::string(""));
+	EXPECT_EQ_STR(first[4], std::string("_L 0x00000003 0x00000004"));
 
 	// The second cheat ends at the _S of the next game.
 	EXPECT_EQ_INT(CheatFileText::BlockEndLine(lines, 8), 9);
@@ -129,10 +130,11 @@ static bool TestCheatTextReplaceRemoveAppend() {
 	EXPECT_EQ_STR(CheatFileText::JoinLines(lines, true),
 		std::string("_S ULUS10000\n_G Test game\n_C1 Renamed\n_L 0x00000009 0x0000000A\n\n_C0 Second\n_L 0x00000003 0x00000004\n"));
 
-	// Remove the second cheat by its line number in the current text (line 6).
+	// Remove the second cheat by its line number in the current text (line 6). The blank
+	// separator line in front of it goes too, so no double blank is left behind.
 	EXPECT_TRUE(CheatFileText::RemoveCheatBlock(lines, 6));
 	EXPECT_EQ_STR(CheatFileText::JoinLines(lines, true),
-		std::string("_S ULUS10000\n_G Test game\n_C1 Renamed\n_L 0x00000009 0x0000000A\n\n"));
+		std::string("_S ULUS10000\n_G Test game\n_C1 Renamed\n_L 0x00000009 0x0000000A\n"));
 
 	// Append a new cheat: the blank separator is already there, so none is added.
 	CheatFileText::AppendCheatBlock(lines, CheatFileText::SplitLines("_C0 Third\n_L 0x00000007 0x00000008\n"));
