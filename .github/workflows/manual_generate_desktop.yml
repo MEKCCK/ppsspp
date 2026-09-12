@@ -135,3 +135,28 @@ jobs:
           name: PPSSPP-Windows-x64 (zip)
           path: PPSSPP-Windows-x64.zip
 
+  # The main Build workflow is disabled in this repository, which means the unit tests never
+  # run. This job keeps them running somewhere: it only builds the test target, so it is quick.
+  unit-tests:
+    name: Unit tests (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build build-essential \
+              libsdl3-dev libsdl3-ttf-dev libgl1-mesa-dev libglu1-mesa-dev libfontconfig1-dev libcurl4-openssl-dev
+
+      - name: Configure & build the tests
+        run: |
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DUNITTEST=ON -DUSE_FFMPEG=OFF
+          cmake --build build --target PPSSPPUnitTest -j$(nproc)
+
+      - name: Run the unit tests
+        run: ./build/PPSSPPUnitTest all
+
