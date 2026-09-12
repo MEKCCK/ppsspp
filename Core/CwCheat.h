@@ -34,9 +34,11 @@ struct CheatCode {
 };
 
 struct CheatFileInfo {
-	int lineNum;
+	// The defaults matter: the parser keeps one of these around and decides whether it holds a
+	// cheat yet by looking at lineNum, so leaving it uninitialized pushed a garbage entry.
+	int lineNum = 0;
 	std::string name;
-	bool enabled;
+	bool enabled = false;
 
 	bool IsTitle(std::string_view *title) const {
 		return DetectCheatTitle(name, title);

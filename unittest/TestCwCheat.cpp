@@ -51,11 +51,12 @@ static bool TestCheatParseTextValid() {
 
 static bool TestCheatParseTextErrors() {
 	CheatFileParser parser(NonexistentCheatPath(), "ULUS10000");
-	// An unknown line type on line 2 and a _L line with only one value on line 4.
+	// An unknown line type on line 2 and a _L line with only one value on line 4. The cheat has
+	// to be enabled for its _L lines to be looked at at all, so this is a _C1.
 	EXPECT_FALSE(parser.ParseText(
 		"_S ULUS10000\n"
 		"_X0 Broken line type\n"
-		"_C0 Missing values\n"
+		"_C1 Missing values\n"
 		"_L 0x20123456\n"));
 	EXPECT_EQ_INT((int)parser.GetErrors().size(), 2);
 	return true;
@@ -68,7 +69,7 @@ static bool TestCheatParseBomAndComments() {
 		"// a comment\n"
 		"# another comment\n"
 		"\n"
-		"_C0 Commented\n"
+		"_C1 Commented\n"
 		"// comment inside the cheat\n"
 		"_L 0x00000001 0x00000002\n"));
 
