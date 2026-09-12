@@ -1974,6 +1974,26 @@ bool MultilineTextEdit::Key(const KeyInput &input) {
 		return false;
 	}
 
+	// Mouse wheel. Like ScrollView, this arrives as a key event with the amount in the upper
+	// bits of the flags, and only the key code says which way to go. Scrolling must not move
+	// the caret.
+	if ((input.keyCode == NKCODE_EXT_MOUSEWHEEL_UP || input.keyCode == NKCODE_EXT_MOUSEWHEEL_DOWN) &&
+		(input.flags & KeyInputFlags::HAS_WHEEL_DELTA)) {
+		int lines = ((s32)input.flags >> 16) / 40;
+		if (lines < 1) {
+			lines = 1;
+		}
+		firstVisibleLine_ += input.keyCode == NKCODE_EXT_MOUSEWHEEL_UP ? -lines : lines;
+		const int maxFirst = buffer_.LineCount() - lastVisibleLines_;
+		if (firstVisibleLine_ > maxFirst) {
+			firstVisibleLine_ = maxFirst < 0 ? 0 : maxFirst;
+		}
+		if (firstVisibleLine_ < 0) {
+			firstVisibleLine_ = 0;
+		}
+		return true;
+	}
+
 	bool changed = false;
 
 	if (input.flags & KeyInputFlags::DOWN) {
@@ -2069,7 +2089,9 @@ bool MultilineTextEdit::Touch(const TouchInput &touch) {
 	}
 
 	if (touch.flags & TouchInputFlags::MOVE) {
-		if (dragging_ && lastLineHeight_ > 0.0f) {
+		// Dragging scrolls for a finger; with a mouse there is nothing to drag (no selection
+		// support yet), so leave the view where it is.
+		if (dragging_ && lastLineHeight_ > 0.0f && !(touch.flags & TouchInputFlags::MOUSE)) {
 			// Dragging scrolls vertically, like a text view in any other app.
 			const int lineDelta = (int)((dragStartY_ - touch.y) / lastLineHeight_);
 			firstVisibleLine_ = dragStartLine_ + lineDelta;
