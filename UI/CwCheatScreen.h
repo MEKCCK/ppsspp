@@ -44,8 +44,8 @@ public:
 	void OnImportBrowse(UI::EventParams &params);
 	void OnDisableAll(UI::EventParams &params);
 
-	// Opens the in-app text editor for a cheat file.
-	void OpenEditor(CheatEditScreen::Mode mode, int cheatLineNum = 0);
+	// Opens the in-app text editor for this game's cheat file.
+	void OpenEditor();
 
 	void update() override;
 	bool key(const KeyInput &input) override;

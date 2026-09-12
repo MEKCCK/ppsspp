@@ -32,48 +32,13 @@
 
 using namespace UI;
 
-CheatEditScreen::CheatEditScreen(const Path &gamePath, const Path &cheatFile, std::string_view gameID, Mode mode, int cheatLineNum)
-	: UIBaseDialogScreen(gamePath), cheatFile_(cheatFile), gameID_(gameID), mode_(mode), cheatLineNum_(cheatLineNum) {
-	LoadInitialText();
-}
-
-void CheatEditScreen::LoadInitialText() {
+CheatEditScreen::CheatEditScreen(const Path &gamePath, const Path &cheatFile, std::string_view gameID)
+	: UIBaseDialogScreen(gamePath), cheatFile_(cheatFile), gameID_(gameID) {
 	std::string text;
 	if (File::ReadTextFileToString(cheatFile_, &text)) {
-		originalText_ = text;
+		fileText_ = text;
 	}
-	fileTrailingNewline_ = CheatFileText::EndsWithNewline(originalText_);
-
-	switch (mode_) {
-	case Mode::WholeFile:
-		currentText_ = originalText_;
-		break;
-	case Mode::OneCheat:
-	{
-		const std::vector<std::string> lines = CheatFileText::SplitLines(originalText_);
-		currentText_ = CheatFileText::JoinLines(CheatFileText::GetCheatBlock(lines, cheatLineNum_), true);
-		break;
-	}
-	case Mode::NewCheat:
-	default:
-		// A starting point that the parser will accept as-is.
-		currentText_ = "_C0 New cheat\n_L 0x00000000 0x00000000\n";
-		break;
-	}
-	initialEditText_ = currentText_;
-}
-
-std::string_view CheatEditScreen::Title() const {
-	auto cw = GetI18NCategory(I18NCat::CWCHEATS);
-	switch (mode_) {
-	case Mode::WholeFile:
-		return cw->T("Edit Cheat File");
-	case Mode::NewCheat:
-		return cw->T("Add Cheat");
-	case Mode::OneCheat:
-	default:
-		return cw->T("Edit Cheat");
-	}
+	currentText_ = fileText_;
 }
 
 void CheatEditScreen::CreateViews() {
@@ -91,7 +56,7 @@ void CheatEditScreen::CreateViews() {
 	// away. The system back key goes through key() and does the same.
 	TopBarFlags topBarFlags = portrait ? TopBarFlags::Portrait : TopBarFlags::Default;
 	topBarFlags |= TopBarFlags::NoBackButton;
-	root->Add(new TopBar(*screenManager()->getUIContext(), topBarFlags, Title()));
+	root->Add(new TopBar(*screenManager()->getUIContext(), topBarFlags, cw->T("Edit Cheat File")));
 
 	LinearLayout *buttons = root->Add(new LinearLayout(ORIENT_HORIZONTAL, new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT, Margins(8, 8, 8, 4))));
 	buttons->SetSpacing(8.0f);
@@ -108,10 +73,6 @@ void CheatEditScreen::CreateViews() {
 			currentText_ = edit_->GetText();
 		}
 	});
-
-	if (mode_ == Mode::OneCheat) {
-		root->Add(new Choice(cw->T("Delete this cheat"), ImageID("I_TRASHCAN"), new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT, Margins(8, 0, 8, 8))))->OnClick.Handle(this, &CheatEditScreen::OnDelete);
-	}
 }
 
 bool CheatEditScreen::key(const KeyInput &key) {
@@ -137,65 +98,16 @@ void CheatEditScreen::ShowNotice(NoticeLevel level, std::string_view text) {
 	RecreateViews();
 }
 
-bool CheatEditScreen::BuildNewFileText(std::string *out, std::string *error) const {
-	const std::string edited = edit_ ? edit_->GetText() : currentText_;
-
-	if (mode_ == Mode::WholeFile) {
-		*out = edited;
-		return true;
-	}
-
-	// A single cheat may not restructure the file, so _S and _G are not allowed here.
-	const std::vector<std::string> editedLines = CheatFileText::SplitLines(edited);
-	for (const std::string &line : editedLines) {
-		if (CheatFileText::IsDirectiveLine(line, 'S') || CheatFileText::IsDirectiveLine(line, 'G')) {
-			*error = "A cheat cannot contain _S or _G lines. Edit the whole cheat file for that.";
-			return false;
-		}
-	}
-
-	if (mode_ == Mode::NewCheat) {
-		bool hasNameLine = false;
-		for (const std::string &line : editedLines) {
-			if (CheatFileText::IsCheatNameLine(line)) {
-				hasNameLine = true;
-				break;
-			}
-		}
-		if (!hasNameLine) {
-			*error = "A cheat needs a name line such as \"_C0 Infinite health\".";
-			return false;
-		}
-	}
-
-	std::vector<std::string> lines = CheatFileText::SplitLines(originalText_);
-	if (mode_ == Mode::OneCheat) {
-		if (!CheatFileText::ReplaceCheatBlock(lines, cheatLineNum_, editedLines)) {
-			*error = "The cheat is no longer where it was. Reopen the cheat file and try again.";
-			return false;
-		}
-	} else {
-		CheatFileText::AppendCheatBlock(lines, editedLines);
-	}
-	*out = CheatFileText::JoinLines(lines, fileTrailingNewline_);
-	return true;
-}
-
 void CheatEditScreen::OnSave(UI::EventParams &params) {
-	std::string newText;
-	std::string error;
-	if (!BuildNewFileText(&newText, &error)) {
-		ShowNotice(NoticeLevel::ERROR, error);
-		return;
-	}
+	const std::string edited = edit_ ? edit_->GetText() : currentText_;
 
 	// Check the result with the same parser the game uses.
 	CheatFileParser parser(cheatFile_, gameID_);
-	parser.ParseText(newText);
+	parser.ParseText(edited);
 	const std::vector<std::string> &errors = parser.GetErrors();
 	if (!errors.empty()) {
 		// The file may well have had problems before this edit, so offer to save anyway.
-		std::string message = "The cheat file has problems after this edit:";
+		std::string message = "The cheat file has problems:";
 		for (size_t i = 0; i < errors.size() && i < 3; ++i) {
 			message += "\n";
 			message += errors[i];
@@ -204,15 +116,15 @@ void CheatEditScreen::OnSave(UI::EventParams &params) {
 			message += StringFromFormat("\n(+%d more)", (int)errors.size() - 3);
 		}
 		auto di = GetI18NCategory(I18NCat::DIALOG);
-		screenManager()->push(new MessagePopupScreen(di->T("Save anyway?"), message, di->T("Save"), di->T("Cancel"), [this, newText](bool result) {
+		screenManager()->push(new MessagePopupScreen(di->T("Save anyway?"), message, di->T("Save"), di->T("Cancel"), [this, edited](bool result) {
 			if (result) {
-				SaveText(newText);
+				SaveText(edited);
 			}
 		}));
 		return;
 	}
 
-	SaveText(newText);
+	SaveText(edited);
 }
 
 void CheatEditScreen::SaveText(const std::string &newText) {
@@ -232,7 +144,7 @@ void CheatEditScreen::OnCancel(UI::EventParams &params) {
 
 void CheatEditScreen::ConfirmDiscard() {
 	const std::string edited = edit_ ? edit_->GetText() : currentText_;
-	if (edited == initialEditText_) {
+	if (edited == fileText_) {
 		TriggerFinish(DR_CANCEL);
 		return;
 	}
@@ -242,23 +154,5 @@ void CheatEditScreen::ConfirmDiscard() {
 		if (result) {
 			TriggerFinish(DR_CANCEL);
 		}
-	}));
-}
-
-void CheatEditScreen::OnDelete(UI::EventParams &params) {
-	auto cw = GetI18NCategory(I18NCat::CWCHEATS);
-	auto di = GetI18NCategory(I18NCat::DIALOG);
-	screenManager()->push(new MessagePopupScreen(cw->T("Delete this cheat"), cw->T("The cheat will be removed from the cheat file."), di->T("Delete"), di->T("Cancel"), [this](bool result) {
-		if (!result) {
-			return;
-		}
-		// Delete uses the file as it was on disk, not the edited text: the button is about
-		// removing the cheat, and mixing it with unsaved edits would be confusing.
-		std::vector<std::string> lines = CheatFileText::SplitLines(originalText_);
-		if (!CheatFileText::RemoveCheatBlock(lines, cheatLineNum_)) {
-			ShowNotice(NoticeLevel::ERROR, "The cheat is no longer where it was. Reopen the cheat file and try again.");
-			return;
-		}
-		SaveText(CheatFileText::JoinLines(lines, fileTrailingNewline_));
 	}));
 }

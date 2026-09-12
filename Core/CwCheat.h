@@ -81,30 +81,6 @@ private:
 	Path filename_;
 };
 
-// 金手指文件的纯文字操作。不依赖 UI，可被单元测试直接覆盖。
-namespace CheatFileText {
-	bool EndsWithNewline(std::string_view text);
-
-	// 以 '\n' 切行。结尾换行不会产生额外的空行（"a\nb\n" -> {"a","b"}，"" -> {}，"\n" -> {""}），
-	// 所以 SplitLines() + JoinLines(..., EndsWithNewline(text)) 会还原成原本的字节。
-	std::vector<std::string> SplitLines(std::string_view text);
-	std::string JoinLines(const std::vector<std::string> &lines, bool trailingNewline);
-
-	// 一笔金手指的文字范围：从第 lineNum 行（1-based，_C 那一行）开始，
-	// 到下一个 _C/_S/_G 行之前，或文件结尾。夹在中间的注释与空行都算在内。
-	int BlockEndLine(const std::vector<std::string> &lines, int lineNum);
-	std::vector<std::string> GetCheatBlock(const std::vector<std::string> &lines, int lineNum);
-	bool ReplaceCheatBlock(std::vector<std::string> &lines, int lineNum, const std::vector<std::string> &blockLines);
-	bool RemoveCheatBlock(std::vector<std::string> &lines, int lineNum);
-	void AppendCheatBlock(std::vector<std::string> &lines, const std::vector<std::string> &blockLines);
-
-	// Line classification, shared with the editor UI so it does not need its own trimming.
-	std::string TrimLine(std::string_view line);
-	bool IsDirectiveLine(std::string_view line, char directive);  // e.g. '_S ULUS10000'
-	bool IsCheatNameLine(std::string_view line);                  // '_C0 Some name'
-	bool IsBlockBoundary(std::string_view line);                  // _C, _S or _G
-}
-
 class CheatFileParser {
 public:
 	CheatFileParser(const Path &filename, std::string_view gameID = "");
