@@ -2898,6 +2898,7 @@ bool TestZipSlip();
 bool TestLzrc();
 bool TestCwCheat();
 bool TestMultilineTextBuffer();
+bool TestMultilineTextEdit();
 bool TestDemangle();
 
 // The 8.3 short names games read out of d_private. These aren't verified against hardware yet (no
@@ -3119,6 +3120,7 @@ TestItem availableTests[] = {
 	TEST_ITEM(Lzrc),
 	TEST_ITEM(CwCheat),
 	TEST_ITEM(MultilineTextBuffer),
+	TEST_ITEM(MultilineTextEdit),
 	TEST_ITEM(Demangle),
 	TEST_ITEM(TextureReplacer),
 	TEST_ITEM(UITabOrder),

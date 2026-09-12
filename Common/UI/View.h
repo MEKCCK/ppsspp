@@ -1233,6 +1233,9 @@ public:
 	void SetMaxLen(size_t maxLen) { buffer_.SetMaxLen(maxLen); }
 	void SetShowLineNumbers(bool show) { showLineNumbers_ = show; }
 
+	// Visible scroll state, so scrolling can be tested without a UIContext.
+	int FirstVisibleLine() const { return firstVisibleLine_; }
+
 	void FocusChanged(FocusFlags focusFlags) override;
 	void GetContentDimensions(const UIContext &dc, float &w, float &h) const override;
 	void Draw(UIContext &dc) override;
@@ -1261,7 +1264,8 @@ private:
 	float scrollX_ = 0.0f;
 	// Updated while drawing; used by PageUp/PageDown and by touch, which have no UIContext of their own.
 	int lastVisibleLines_ = 10;
-	float lastLineHeight_ = 0.0f;
+	// A guess until the first draw, so keys and wheel events work if they arrive first.
+	float lastLineHeight_ = 24.0f;
 	float lastGutter_ = 0.0f;
 	// Touch drag scrolling: where the drag started, so it is relative and not cumulative.
 	float dragStartY_ = 0.0f;
