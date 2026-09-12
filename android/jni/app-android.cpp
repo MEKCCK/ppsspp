@@ -1070,6 +1070,24 @@ bool System_MakeRequest(SystemRequestType type, int requestId, const std::string
 	case SystemRequestType::COPY_TO_CLIPBOARD:
 		PushCommand("copy_to_clipboard", param1);
 		return true;
+	case SystemRequestType::NOTIFY_UI_EVENT:
+		// The shared UI says when a text field gets or loses focus (TextEdit::FocusChanged and
+		// MultilineTextEdit::FocusChanged send this). iOS (ios/main.mm) and UWP already handle
+		// it; Android was the one platform without it, which is why on-screen keyboards never
+		// appeared for PPSSPP's own text fields.
+		switch ((UIEventNotification)param3) {
+		case UIEventNotification::TEXT_GOTFOCUS:
+			PushCommand("showKeyboard", "");
+			break;
+		case UIEventNotification::TEXT_LOSTFOCUS:
+		case UIEventNotification::POPUP_CLOSED:
+		case UIEventNotification::DIALOG_CLOSED:
+			PushCommand("hideKeyboard", "");
+			break;
+		default:
+			break;
+		}
+		return true;
 	case SystemRequestType::INPUT_TEXT_MODAL:
 	{
 		std::string serialized = StringFromFormat("%d:@:%s:@:%s", requestId, param1.c_str(), param2.c_str());

@@ -93,6 +93,7 @@
     <ClInclude Include="..\..\UI\ChatScreen.h" />
     <ClInclude Include="..\..\UI\ControlMappingScreen.h" />
     <ClInclude Include="..\..\UI\CustomButtonMappingScreen.h" />
+    <ClInclude Include="..\..\UI\CheatEditScreen.h" />
     <ClInclude Include="..\..\UI\CwCheatScreen.h" />
     <ClInclude Include="..\..\UI\DebugOverlay.h" />
     <ClInclude Include="..\..\UI\DeveloperToolsScreen.h" />
@@ -154,6 +155,7 @@
     <ClCompile Include="..\..\UI\ChatScreen.cpp" />
     <ClCompile Include="..\..\UI\ControlMappingScreen.cpp" />
     <ClCompile Include="..\..\UI\CustomButtonMappingScreen.cpp" />
+    <ClCompile Include="..\..\UI\CheatEditScreen.cpp" />
     <ClCompile Include="..\..\UI\CwCheatScreen.cpp" />
     <ClCompile Include="..\..\UI\DebugOverlay.cpp" />
     <ClCompile Include="..\..\UI\DeveloperToolsScreen.cpp" />

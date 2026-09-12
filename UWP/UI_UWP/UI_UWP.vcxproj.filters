@@ -43,6 +43,9 @@
     <ClCompile Include="..\..\UI\CustomButtonMappingScreen.cpp">
       <Filter>Screens</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\UI\CheatEditScreen.cpp">
+      <Filter>Screens</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\UI\CwCheatScreen.cpp">
       <Filter>Screens</Filter>
     </ClCompile>
@@ -193,6 +196,9 @@
       <Filter>Screens</Filter>
     </ClInclude>
     <ClInclude Include="..\..\UI\CustomButtonMappingScreen.h">
+      <Filter>Screens</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\UI\CheatEditScreen.h">
       <Filter>Screens</Filter>
     </ClInclude>
     <ClInclude Include="..\..\UI\CwCheatScreen.h">

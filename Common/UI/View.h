@@ -1170,6 +1170,111 @@ private:
 	// TODO: Selections
 };
 
+// Multi-line text with a caret. Split out from the view so the line/caret arithmetic (the part
+// that is easy to get wrong) can be unit tested without a UIContext.
+class MultilineTextBuffer {
+public:
+	void SetText(std::string text);
+	const std::string &Text() const { return text_; }
+
+	void SetMaxLen(size_t maxLen) { maxLen_ = maxLen; }
+	size_t MaxLen() const { return maxLen_; }
+
+	int Caret() const { return caret_; }
+	void SetCaret(int offset);
+
+	// These return false when nothing changed (start/end of text, or max length reached).
+	bool Insert(std::string_view text);
+	bool Backspace();
+	bool DeleteForward();
+
+	// Vertical movement keeps the column it started from, the way editors do.
+	void MoveLeft();
+	void MoveRight();
+	void MoveUp();
+	void MoveDown();
+	void MoveLineStart();
+	void MoveLineEnd();
+	void MovePageUp(int lines);
+	void MovePageDown(int lines);
+
+	int LineCount() const { return (int)lineStarts_.size(); }
+	int LineOfCaret() const { return LineOfOffset(caret_); }
+	int LineStart(int line) const;
+	// Byte offset of the '\n' that ends the line, or of the end of the text.
+	int LineEnd(int line) const;
+	int ColumnOfCaret() const { return ColumnOfOffset(LineOfCaret(), caret_); }
+	// Tabs count as four columns, matching how the view draws them.
+	int OffsetForColumn(int line, int column) const;
+
+private:
+	void RebuildIndex();
+	int LineOfOffset(int offset) const;
+	int ColumnOfOffset(int line, int offset) const;
+
+	std::string text_;
+	// One entry per line; lineStarts_[0] is always 0 and the list is never empty.
+	std::vector<int> lineStarts_;
+	int caret_ = 0;
+	// Kept while moving up/down so the column does not drift on short lines.
+	int desiredColumn_ = -1;
+	size_t maxLen_ = 1 << 20;
+};
+
+class MultilineTextEdit : public View {
+public:
+	MultilineTextEdit(std::string_view text, std::string_view title, LayoutParams *layoutParams = nullptr);
+
+	void SetText(std::string_view text);
+	const std::string &GetText() const { return buffer_.Text(); }
+	MultilineTextBuffer &Buffer() { return buffer_; }
+	const MultilineTextBuffer &Buffer() const { return buffer_; }
+
+	void SetMaxLen(size_t maxLen) { buffer_.SetMaxLen(maxLen); }
+	void SetShowLineNumbers(bool show) { showLineNumbers_ = show; }
+
+	// Visible scroll state, so scrolling can be tested without a UIContext.
+	int FirstVisibleLine() const { return firstVisibleLine_; }
+
+	void FocusChanged(FocusFlags focusFlags) override;
+	void GetContentDimensions(const UIContext &dc, float &w, float &h) const override;
+	void Draw(UIContext &dc) override;
+	std::string DescribeText() const override;
+	bool Key(const KeyInput &key) override;
+	bool Touch(const TouchInput &touch) override;
+
+	Event OnTextChange;
+
+private:
+	float LineHeight(const UIContext &dc) const;
+	float GutterWidth(const UIContext &dc) const;
+	int VisibleLineCount(const UIContext &dc) const;
+	void EnsureCaretVisible(const UIContext &dc, float lineHeight, float gutter);
+	// Touch only records where the finger went down; the caret is resolved while drawing,
+	// because that is the only place with a UIContext to measure text with.
+	int OffsetForTouch(const UIContext &dc, float x, int line, float lineHeight, float gutter) const;
+	void NotifyTextChanged();
+
+	MultilineTextBuffer buffer_;
+	std::string title_;
+	std::string undo_;
+	bool showLineNumbers_ = true;
+	int firstVisibleLine_ = 0;
+	// The view owns the horizontal scroll, so the caret can stay inside the visible area.
+	float scrollX_ = 0.0f;
+	// Updated while drawing; used by PageUp/PageDown and by touch, which have no UIContext of their own.
+	int lastVisibleLines_ = 10;
+	// A guess until the first draw, so keys and wheel events work if they arrive first.
+	float lastLineHeight_ = 24.0f;
+	float lastGutter_ = 0.0f;
+	// Touch drag scrolling: where the drag started, so it is relative and not cumulative.
+	float dragStartY_ = 0.0f;
+	int dragStartLine_ = 0;
+	bool dragging_ = false;
+	float pendingCaretX_ = -1.0f;
+	int pendingCaretLine_ = -1;
+};
+
 class ImageView : public InertView {
 public:
 	ImageView(ImageID atlasImage, const std::string &text, LayoutParams *layoutParams = nullptr);

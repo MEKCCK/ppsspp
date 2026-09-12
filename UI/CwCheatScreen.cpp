@@ -40,6 +40,7 @@
 #endif
 #include "Common/DbgNew.h"
 #include "UI/GameInfoCache.h"
+#include "UI/CheatEditScreen.h"
 #include "UI/CwCheatScreen.h"
 #include "UI/MiscViews.h"
 
@@ -222,7 +223,10 @@ void CwCheatScreen::CreateSettingsViews(UI::ViewGroup *leftColumn) {
 	auto di = GetI18NCategory(I18NCat::DIALOG);
 	auto mm = GetI18NCategory(I18NCat::MAINMENU);
 
-	//leftColumn->Add(new Choice(cw->T("Add Cheat")))->OnClick.Handle(this, &CwCheatScreen::OnAddCheat);
+	leftColumn->Add(new Choice(cw->T("Edit Cheat File")))->OnClick.Add([this](UI::EventParams &) {
+		OpenEditor();
+	});
+
 	leftColumn->Add(new ItemHeader(cw->T("Import Cheats")));
 
 	leftColumn->Add(new Choice(cw->T("Download cheat database")))->OnClick.Add([this](UI::EventParams &) {
@@ -250,9 +254,6 @@ void CwCheatScreen::CreateSettingsViews(UI::ViewGroup *leftColumn) {
 			search_.ApplySearchFilter(cheatList_, false);
 		});
 	});
-#if !defined(MOBILE_DEVICE)
-	leftColumn->Add(new Choice(cw->T("Edit Cheat File")))->OnClick.Handle(this, &CwCheatScreen::OnEditCheatFile);
-#endif
 	leftColumn->Add(new Choice(di->T("Disable All")))->OnClick.Handle(this, &CwCheatScreen::OnDisableAll);
 	leftColumn->Add(new PopupSliderChoice(&g_Config.iCwCheatRefreshIntervalMs, 1, 1000, 77, cw->T("Refresh interval"), 1, screenManager()))->SetFormat(di->T("%d ms"));
 }
@@ -377,19 +378,11 @@ void CwCheatScreen::OnDisableAll(UI::EventParams &params) {
 	}
 }
 
-void CwCheatScreen::OnAddCheat(UI::EventParams &params) {
-	TriggerFinish(DR_OK);
-	g_Config.bReloadCheats = true;
-}
-
-void CwCheatScreen::OnEditCheatFile(UI::EventParams &params) {
-	g_Config.bReloadCheats = true;
-	if (MIPSComp::jit) {
-		MIPSComp::jit->ClearCache();
+void CwCheatScreen::OpenEditor() {
+	if (!engine_) {
+		return;
 	}
-	if (engine_) {
-		File::OpenFileInEditor(engine_->CheatFilename());
-	}
+	screenManager()->push(new CheatEditScreen(gamePath_, engine_->CheatFilename(), gameID_));
 }
 
 static char *GetLineNoNewline(char *temp, int sz, FILE *fp) {
