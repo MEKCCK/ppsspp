@@ -1369,6 +1369,7 @@ if(UNITTEST)
 		unittest/TestZipSlip.cpp
 		unittest/TestLzrc.cpp
 		unittest/TestCwCheat.cpp
+		unittest/TestMultilineTextBuffer.cpp
 		unittest/TestDemangle.cpp
 		unittest/TestTextureReplacer.cpp
 		unittest/TestRiscVEmitter.cpp

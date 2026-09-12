@@ -1530,6 +1530,569 @@ void TextEdit::InsertAtCaret(const char *text) {
 	}
 }
 
+//
+// MultilineTextBuffer
+//
+
+void MultilineTextBuffer::RebuildIndex() {
+	lineStarts_.clear();
+	lineStarts_.push_back(0);
+	for (size_t i = 0; i < text_.size(); ++i) {
+		if (text_[i] == '\n') {
+			lineStarts_.push_back((int)i + 1);
+		}
+	}
+}
+
+void MultilineTextBuffer::SetText(std::string text) {
+	text_ = std::move(text);
+	RebuildIndex();
+	caret_ = 0;
+	desiredColumn_ = -1;
+}
+
+void MultilineTextBuffer::SetCaret(int offset) {
+	if (offset < 0) {
+		offset = 0;
+	}
+	if (offset > (int)text_.size()) {
+		offset = (int)text_.size();
+	}
+	// Never leave the caret in the middle of a UTF-8 sequence.
+	while (offset > 0 && offset < (int)text_.size() && ((u8)text_[offset] & 0xC0) == 0x80) {
+		--offset;
+	}
+	caret_ = offset;
+	desiredColumn_ = -1;
+}
+
+int MultilineTextBuffer::LineOfOffset(int offset) const {
+	int lo = 0;
+	int hi = (int)lineStarts_.size() - 1;
+	int result = 0;
+	while (lo <= hi) {
+		const int mid = (lo + hi) / 2;
+		if (lineStarts_[mid] <= offset) {
+			result = mid;
+			lo = mid + 1;
+		} else {
+			hi = mid - 1;
+		}
+	}
+	return result;
+}
+
+int MultilineTextBuffer::LineStart(int line) const {
+	if (line <= 0) {
+		return 0;
+	}
+	if (line >= (int)lineStarts_.size()) {
+		return (int)text_.size();
+	}
+	return lineStarts_[line];
+}
+
+int MultilineTextBuffer::LineEnd(int line) const {
+	if (line < 0) {
+		return 0;
+	}
+	if (line + 1 >= (int)lineStarts_.size()) {
+		return (int)text_.size();
+	}
+	// Skip the '\n' that ends this line.
+	return lineStarts_[line + 1] - 1;
+}
+
+int MultilineTextBuffer::ColumnOfOffset(int line, int offset) const {
+	int column = 0;
+	int i = LineStart(line);
+	while (i < offset && i < (int)text_.size()) {
+		column += text_[i] == '\t' ? 4 : 1;
+		u8_inc(text_.c_str(), &i);
+	}
+	return column;
+}
+
+int MultilineTextBuffer::OffsetForColumn(int line, int column) const {
+	const int start = LineStart(line);
+	const int end = LineEnd(line);
+	if (column <= 0) {
+		return start;
+	}
+	int current = 0;
+	int i = start;
+	while (i < end) {
+		const int width = text_[i] == '\t' ? 4 : 1;
+		if (current + width > column) {
+			// The column lands inside a tab; use the boundary before it.
+			return i;
+		}
+		current += width;
+		u8_inc(text_.c_str(), &i);
+	}
+	return end;
+}
+
+bool MultilineTextBuffer::Insert(std::string_view text) {
+	if (text.empty() || text_.size() + text.size() > maxLen_) {
+		return false;
+	}
+	text_.insert(caret_, text.data(), text.size());
+	caret_ += (int)text.size();
+	RebuildIndex();
+	desiredColumn_ = -1;
+	return true;
+}
+
+bool MultilineTextBuffer::Backspace() {
+	if (caret_ <= 0) {
+		return false;
+	}
+	int begin = caret_;
+	u8_dec(text_.c_str(), &begin);
+	text_.erase(begin, caret_ - begin);
+	caret_ = begin;
+	RebuildIndex();
+	desiredColumn_ = -1;
+	return true;
+}
+
+bool MultilineTextBuffer::DeleteForward() {
+	if (caret_ >= (int)text_.size()) {
+		return false;
+	}
+	int end = caret_;
+	u8_inc(text_.c_str(), &end);
+	text_.erase(caret_, end - caret_);
+	RebuildIndex();
+	desiredColumn_ = -1;
+	return true;
+}
+
+void MultilineTextBuffer::MoveLeft() {
+	if (caret_ <= 0) {
+		return;
+	}
+	u8_dec(text_.c_str(), &caret_);
+	desiredColumn_ = -1;
+}
+
+void MultilineTextBuffer::MoveRight() {
+	if (caret_ >= (int)text_.size()) {
+		return;
+	}
+	u8_inc(text_.c_str(), &caret_);
+	desiredColumn_ = -1;
+}
+
+void MultilineTextBuffer::MoveUp() {
+	const int line = LineOfOffset(caret_);
+	if (line <= 0) {
+		return;
+	}
+	if (desiredColumn_ < 0) {
+		desiredColumn_ = ColumnOfOffset(line, caret_);
+	}
+	caret_ = OffsetForColumn(line - 1, desiredColumn_);
+}
+
+void MultilineTextBuffer::MoveDown() {
+	const int line = LineOfOffset(caret_);
+	if (line + 1 >= LineCount()) {
+		return;
+	}
+	if (desiredColumn_ < 0) {
+		desiredColumn_ = ColumnOfOffset(line, caret_);
+	}
+	caret_ = OffsetForColumn(line + 1, desiredColumn_);
+}
+
+void MultilineTextBuffer::MoveLineStart() {
+	caret_ = LineStart(LineOfOffset(caret_));
+	desiredColumn_ = -1;
+}
+
+void MultilineTextBuffer::MoveLineEnd() {
+	caret_ = LineEnd(LineOfOffset(caret_));
+	desiredColumn_ = -1;
+}
+
+void MultilineTextBuffer::MovePageUp(int lines) {
+	if (lines <= 0) {
+		return;
+	}
+	if (desiredColumn_ < 0) {
+		desiredColumn_ = ColumnOfCaret();
+	}
+	int line = LineOfOffset(caret_) - lines;
+	if (line < 0) {
+		line = 0;
+	}
+	caret_ = OffsetForColumn(line, desiredColumn_);
+}
+
+void MultilineTextBuffer::MovePageDown(int lines) {
+	if (lines <= 0) {
+		return;
+	}
+	if (desiredColumn_ < 0) {
+		desiredColumn_ = ColumnOfCaret();
+	}
+	int line = LineOfOffset(caret_) + lines;
+	const int lastLine = LineCount() - 1;
+	if (line > lastLine) {
+		line = lastLine;
+	}
+	caret_ = OffsetForColumn(line, desiredColumn_);
+}
+
+//
+// MultilineTextEdit
+//
+
+// Tabs are drawn as four spaces; the caret offsets use the same expansion.
+static std::string ExpandTabsForDisplay(std::string_view line) {
+	if (line.find('\t') == std::string_view::npos) {
+		return std::string(line);
+	}
+	std::string out;
+	out.reserve(line.size() + 16);
+	for (char c : line) {
+		if (c == '\t') {
+			out.append(4, ' ');
+		} else {
+			out += c;
+		}
+	}
+	return out;
+}
+
+MultilineTextEdit::MultilineTextEdit(std::string_view text, std::string_view title, LayoutParams *layoutParams)
+	: View(layoutParams), title_(title) {
+	buffer_.SetText(std::string(text));
+}
+
+void MultilineTextEdit::SetText(std::string_view text) {
+	buffer_.SetText(std::string(text));
+	firstVisibleLine_ = 0;
+	scrollX_ = 0.0f;
+}
+
+float MultilineTextEdit::LineHeight(const UIContext &dc) const {
+	float w = 0.0f;
+	float h = 0.0f;
+	dc.MeasureText(dc.GetTheme().uiFont, 1.0f, 1.0f, "Wj", &w, &h, ALIGN_LEFT | ALIGN_VCENTER);
+	return h + 2.0f;
+}
+
+float MultilineTextEdit::GutterWidth(const UIContext &dc) const {
+	if (!showLineNumbers_) {
+		return 0.0f;
+	}
+	float w = 0.0f;
+	float h = 0.0f;
+	dc.MeasureText(dc.GetTheme().uiFont, 1.0f, 1.0f, StringFromInt(buffer_.LineCount()), &w, &h, ALIGN_LEFT | ALIGN_VCENTER);
+	return w + 12.0f;
+}
+
+int MultilineTextEdit::VisibleLineCount(const UIContext &dc) const {
+	const float lineHeight = LineHeight(dc);
+	if (lineHeight <= 0.0f) {
+		return 1;
+	}
+	const int count = (int)(bounds_.h / lineHeight);
+	return count < 1 ? 1 : count;
+}
+
+void MultilineTextEdit::EnsureCaretVisible(const UIContext &dc, float lineHeight, float gutter) {
+	if (lineHeight <= 0.0f) {
+		return;
+	}
+	const int caretLine = buffer_.LineOfCaret();
+	const int visibleLines = VisibleLineCount(dc);
+	if (caretLine < firstVisibleLine_) {
+		firstVisibleLine_ = caretLine;
+	} else if (caretLine >= firstVisibleLine_ + visibleLines) {
+		firstVisibleLine_ = caretLine - visibleLines + 1;
+	}
+	if (firstVisibleLine_ < 0) {
+		firstVisibleLine_ = 0;
+	}
+
+	const float available = bounds_.w - gutter;
+	if (available <= 0.0f) {
+		scrollX_ = 0.0f;
+		return;
+	}
+	const int start = buffer_.LineStart(caretLine);
+	const std::string prefix = ExpandTabsForDisplay(std::string_view(buffer_.Text()).substr(start, buffer_.Caret() - start));
+	float w = 0.0f;
+	float h = 0.0f;
+	dc.MeasureText(dc.GetTheme().uiFont, 1.0f, 1.0f, prefix, &w, &h, ALIGN_LEFT | ALIGN_VCENTER);
+	if (w - scrollX_ > available) {
+		scrollX_ = w - available;
+	}
+	if (w - scrollX_ < 0.0f) {
+		scrollX_ = w;
+	}
+	if (scrollX_ < 0.0f) {
+		scrollX_ = 0.0f;
+	}
+}
+
+int MultilineTextEdit::OffsetForTouch(const UIContext &dc, float x, int line, float lineHeight, float gutter) const {
+	if (line < 0) {
+		line = 0;
+	}
+	if (line >= buffer_.LineCount()) {
+		line = buffer_.LineCount() - 1;
+	}
+
+	const int lineStart = buffer_.LineStart(line);
+	const int lineEnd = buffer_.LineEnd(line);
+	const float localX = x - (bounds_.x + gutter) + scrollX_;
+	if (localX <= 0.0f) {
+		return lineStart;
+	}
+
+	const std::string &text = buffer_.Text();
+	int lineOffset = 0;
+	int i = lineStart;
+	while (i < lineEnd) {
+		int next = i;
+		u8_inc(text.c_str(), &next);
+		const std::string prefix = ExpandTabsForDisplay(std::string_view(text).substr(lineStart, next - lineStart));
+		float w = 0.0f;
+		float h = 0.0f;
+		dc.MeasureText(dc.GetTheme().uiFont, 1.0f, 1.0f, prefix, &w, &h, ALIGN_LEFT | ALIGN_VCENTER);
+		if (w >= localX) {
+			break;
+		}
+		lineOffset = next - lineStart;
+		i = next;
+	}
+	return lineStart + lineOffset;
+}
+
+void MultilineTextEdit::Draw(UIContext &dc) {
+	const FontStyle &font = dc.GetTheme().uiFont;
+	dc.SetFontStyle(font);
+
+	dc.FillRect(HasFocus() ? UI::Drawable(0x80000000) : UI::Drawable(0x30000000), bounds_);
+	dc.PushScissor(bounds_);
+
+	const float lineHeight = LineHeight(dc);
+	const float gutter = GutterWidth(dc);
+	const float textX = bounds_.x + gutter;
+	const int visibleLines = VisibleLineCount(dc);
+	lastVisibleLines_ = visibleLines;
+	lastLineHeight_ = lineHeight;
+	lastGutter_ = gutter;
+
+	// Only drawing knows the view size, so this is where the caret gets kept on screen.
+	EnsureCaretVisible(dc, lineHeight, gutter);
+
+	// Turn a recorded touch position into a caret now that text can be measured.
+	if (pendingCaretX_ >= 0.0f) {
+		buffer_.SetCaret(OffsetForTouch(dc, pendingCaretX_, pendingCaretLine_, lineHeight, gutter));
+		pendingCaretX_ = -1.0f;
+		pendingCaretLine_ = -1;
+		EnsureCaretVisible(dc, lineHeight, gutter);
+	}
+
+	const std::string &text = buffer_.Text();
+	const int lineCount = buffer_.LineCount();
+
+	if (text.empty() && !title_.empty()) {
+		dc.DrawTextRect(title_, Bounds(textX, bounds_.y, bounds_.w - gutter, lineHeight), 0x50FFFFFF, ALIGN_LEFT | ALIGN_VCENTER);
+	}
+
+	for (int i = 0; i < visibleLines; ++i) {
+		const int line = firstVisibleLine_ + i;
+		if (line >= lineCount) {
+			break;
+		}
+		const float y = bounds_.y + i * lineHeight;
+
+		if (showLineNumbers_) {
+			dc.DrawTextRect(StringFromInt(line + 1), Bounds(bounds_.x, y, gutter - 8.0f, lineHeight), 0x60FFFFFF, ALIGN_RIGHT | ALIGN_VCENTER);
+		}
+
+		const int start = buffer_.LineStart(line);
+		const int end = buffer_.LineEnd(line);
+		const std::string display = ExpandTabsForDisplay(std::string_view(text).substr(start, end - start));
+		dc.DrawTextRect(display, Bounds(textX - scrollX_, y, bounds_.w - gutter + scrollX_, lineHeight), 0xFFFFFFFF, ALIGN_LEFT | ALIGN_VCENTER);
+	}
+
+	if (HasFocus()) {
+		const int caretLine = buffer_.LineOfCaret();
+		const int row = caretLine - firstVisibleLine_;
+		if (row >= 0 && row < visibleLines) {
+			const float y = bounds_.y + row * lineHeight;
+			const int start = buffer_.LineStart(caretLine);
+			const std::string prefix = ExpandTabsForDisplay(std::string_view(text).substr(start, buffer_.Caret() - start));
+			float w = 0.0f;
+			float h = 0.0f;
+			dc.MeasureText(font, 1.0f, 1.0f, prefix, &w, &h, ALIGN_LEFT | ALIGN_VCENTER);
+			const float x = textX + w - scrollX_;
+			dc.FillRect(UI::Drawable(0xFFFFFFFF), Bounds(x - 1.0f, y + 1.0f, 3.0f, lineHeight - 2.0f));
+		}
+	}
+
+	dc.PopScissor();
+}
+
+void MultilineTextEdit::GetContentDimensions(const UIContext &dc, float &w, float &h) const {
+	w = 200.0f;
+	h = LineHeight(dc) * 4.0f;
+}
+
+std::string MultilineTextEdit::DescribeText() const {
+	auto u = GetI18NCategory(I18NCat::UI_ELEMENTS);
+	return ApplySafeSubstitutions(u->T("%1 text field"), title_);
+}
+
+void MultilineTextEdit::FocusChanged(FocusFlags focusFlags) {
+	// Same as TextEdit: the platform decides what showing a keyboard means.
+	if (focusFlags & FocusFlags::GOT_FOCUS) {
+		System_NotifyUIEvent(UIEventNotification::TEXT_GOTFOCUS);
+	}
+	if (focusFlags & FocusFlags::LOST_FOCUS) {
+		System_NotifyUIEvent(UIEventNotification::TEXT_LOSTFOCUS);
+	}
+}
+
+void MultilineTextEdit::NotifyTextChanged() {
+	UI::EventParams e{};
+	e.v = this;
+	OnTextChange.Trigger(e);
+}
+
+bool MultilineTextEdit::Key(const KeyInput &input) {
+	if (!HasFocus()) {
+		return false;
+	}
+
+	bool changed = false;
+
+	if (input.flags & KeyInputFlags::DOWN) {
+		switch (input.keyCode) {
+		case NKCODE_DPAD_LEFT: buffer_.MoveLeft(); break;
+		case NKCODE_DPAD_RIGHT: buffer_.MoveRight(); break;
+		case NKCODE_DPAD_UP: buffer_.MoveUp(); break;
+		case NKCODE_DPAD_DOWN: buffer_.MoveDown(); break;
+		case NKCODE_MOVE_HOME: buffer_.MoveLineStart(); break;
+		case NKCODE_MOVE_END: buffer_.MoveLineEnd(); break;
+		case NKCODE_PAGE_UP: buffer_.MovePageUp(lastVisibleLines_); break;
+		case NKCODE_PAGE_DOWN: buffer_.MovePageDown(lastVisibleLines_); break;
+		case NKCODE_FORWARD_DEL:
+			undo_ = buffer_.Text();
+			changed = buffer_.DeleteForward();
+			break;
+		case NKCODE_DEL:
+			undo_ = buffer_.Text();
+			changed = buffer_.Backspace();
+			break;
+		case NKCODE_ENTER:
+		case NKCODE_NUMPAD_ENTER:
+			undo_ = buffer_.Text();
+			changed = buffer_.Insert("\n");
+			break;
+		case NKCODE_BACK:
+		case NKCODE_ESCAPE:
+			return false;
+		default:
+			break;
+		}
+
+		if (input.flags & (KeyInputFlags::ModCtrl | KeyInputFlags::ModMeta)) {
+			switch (input.keyCode) {
+			case NKCODE_C:
+				System_CopyStringToClipboard(buffer_.Text());
+				break;
+			case NKCODE_V:
+			{
+				const std::string clipText = System_GetProperty(SYSPROP_CLIPBOARD_TEXT);
+				if (!clipText.empty()) {
+					undo_ = buffer_.Text();
+					changed = buffer_.Insert(clipText);
+				}
+				break;
+			}
+			case NKCODE_Z:
+				if (!undo_.empty()) {
+					buffer_.SetText(undo_);
+					undo_.clear();
+					changed = true;
+				}
+				break;
+			default:
+				break;
+			}
+		}
+	}
+
+	// Characters. Android's IME sends newlines this way too.
+	if (input.flags & KeyInputFlags::CHAR) {
+		const int unichar = input.keyCode;
+		if (unichar == '\n' || unichar == '\r') {
+			undo_ = buffer_.Text();
+			changed = buffer_.Insert("\n");
+		} else if (unichar >= 0x20 && !(input.flags & KeyInputFlags::ModCtrl)) {
+			char buf[8];
+			buf[u8_wc_toutf8(buf, unichar)] = '\0';
+			undo_ = buffer_.Text();
+			changed = buffer_.Insert(buf);
+		}
+	}
+
+	if (changed) {
+		NotifyTextChanged();
+	}
+	return true;
+}
+
+bool MultilineTextEdit::Touch(const TouchInput &touch) {
+	if (touch.flags & TouchInputFlags::DOWN) {
+		if (!bounds_.Contains(touch.x, touch.y)) {
+			dragging_ = false;
+			return false;
+		}
+		SetFocusedView(this, UI::FocusFlags::CAUSE_FORCED, true);
+		pendingCaretX_ = touch.x;
+		pendingCaretLine_ = lastLineHeight_ > 0.0f ? firstVisibleLine_ + (int)((touch.y - bounds_.y) / lastLineHeight_) : -1;
+		dragStartY_ = touch.y;
+		dragStartLine_ = firstVisibleLine_;
+		dragging_ = true;
+		return true;
+	}
+
+	if (touch.flags & TouchInputFlags::MOVE) {
+		if (dragging_ && lastLineHeight_ > 0.0f) {
+			// Dragging scrolls vertically, like a text view in any other app.
+			const int lineDelta = (int)((dragStartY_ - touch.y) / lastLineHeight_);
+			firstVisibleLine_ = dragStartLine_ + lineDelta;
+			const int maxFirst = buffer_.LineCount() - lastVisibleLines_;
+			if (firstVisibleLine_ > maxFirst) {
+				firstVisibleLine_ = maxFirst < 0 ? 0 : maxFirst;
+			}
+			if (firstVisibleLine_ < 0) {
+				firstVisibleLine_ = 0;
+			}
+			return true;
+		}
+		return false;
+	}
+
+	if (touch.flags & TouchInputFlags::UP) {
+		dragging_ = false;
+		return bounds_.Contains(touch.x, touch.y);
+	}
+
+	return false;
+}
+
+
 void ProgressBar::GetContentDimensions(const UIContext &dc, float &w, float &h) const {
 	dc.MeasureText(dc.GetTheme().uiFont, 1.0f, 1.0f, "  100%  ", &w, &h);
 }
