@@ -213,6 +213,12 @@ public:
 	// Core
 	bool bIgnoreBadMemAccess;
 
+	// Detect FPU exceptions the game has unmasked in fcr31 and report them, instead of
+	// silently producing the IEEE default result. Off by default: PSP threads start with
+	// fcr31 = 0x00000e00, i.e. three of the traps already enabled, so this changes behavior
+	// in plenty of games that divide by zero without meaning anything by it.
+	bool bEnableFPUExceptionTraps;
+
 	// ExceptionAction enum: 0 = default (obey bIgnoreBadMemAccess), 1 = log, 2 = break, 3 = exit
 	int iExceptionActionMemRead;  // this also includes alignment and other odd memory exceptions.
 	int iExceptionActionMemWrite;
@@ -241,6 +247,7 @@ public:
 	bool bAutoSaveSymbolMap;
 	bool bCompressSymbols;
 	bool bCacheFullIsoInRam;
+	bool bAutoUpgradeFirmware;
 	int iRemoteISOPort; // Also used for serving a local remote debugger.
 	int iMHOverlayPosition = 3; // 0..3 = MH HP overlay corner preset (TR/TL/BR/BL)
 	std::string sLastRemoteISOServer;
@@ -606,6 +613,7 @@ public:
 	bool bDontDownloadInfraJson;
 	int iChatButtonPosition;
 	int iChatScreenPosition;
+	bool bChatTimestamps;
 
 	bool bEnableQuickChat;
 	std::string sQuickChat[5];

@@ -105,7 +105,8 @@ std::vector<std::string> ParamSFOData::GetKeys() const {
 }
 
 std::string ParamSFOData::GetDiscID() {
-	const std::string discID = GetValueString("DISC_ID");
+	const std::string rawDiscID = GetValueString("DISC_ID");
+	const std::string discID(StripSpaces(rawDiscID));
 	if (discID.empty()) {
 		std::string fakeID = GenerateFakeID(Path());
 		WARN_LOG(Log::Loader, "No DiscID found - generating a fake one: '%s' (from %s)", fakeID.c_str(), PSP_CoreParameter().fileToStart.c_str());
@@ -116,6 +117,18 @@ std::string ParamSFOData::GetDiscID() {
 		return fakeID;
 	}
 	return discID;
+}
+
+int ParamSFOData::VersionToInt(std::string_view version) {
+	int major = 0, minor = 0;
+	if (sscanf(std::string(version).c_str(), "%d.%d", &major, &minor) != 2) {
+		return 0;
+	}
+	return major * 100 + minor;
+}
+
+int ParamSFOData::GetSystemVersion() const {
+	return VersionToInt(GetValueString("PSP_SYSTEM_VER"));
 }
 
 // I'm so sorry Ced but this is highly endian unsafe :(

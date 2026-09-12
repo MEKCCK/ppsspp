@@ -46,6 +46,7 @@
 #include "Core/HLE/sceAtrac.h"
 #include "Core/HLE/sceUtility.h"
 #include "Core/HLE/sceNet.h"
+#include "Core/HLE/sceNetAdhoc.h"
 
 #include "Core/Dialog/PSPDialog.h"
 #include "Core/Dialog/PSPSaveDialog.h"
@@ -82,6 +83,49 @@ static const int mp4ModuleDeps[] = {0x0300, 0};
 
 static void NotifyLoadStatusAvcodec(int state, u32 loadAddr, u32 totalSize) {
 	JpegNotifyLoadStatus(state);
+}
+
+// The MP4 libraries are a good candidate for running the real thing: libmp4.prx needs only two
+// functions from sceAudiocodec (Init and Decode) plus ordinary kernel calls, and mp4msv.prx - the
+// 41 functions libmp4 leans on - imports nothing at all. So with a firmware dump present, the pair
+// can be loaded for real and left to decode through our sceAudiocodec HLE.
+static SceUID g_mp4RealModules[2] = { 0, 0 };
+
+static void NotifyLoadStatusMp4(int state, u32 loadAddr, u32 totalSize) {
+	// The effective flags, not the raw setting: those also account for a firmware dump that isn't
+	// there or is too old to have sceMp4 (which is the whole point of CheckDisableHLEAvailability),
+	// for the compat flags.
+	if (!(GetEffectiveDisableHLEFlags() & DisableHLEFlags::sceMp4)) {
+		return;
+	}
+
+	if (state == 1) {
+		// mp4msv first - libmp4 imports from it, and an import can only resolve to a module that
+		// is already loaded.
+		static const char *const paths[2] = {
+			"flash0:/kd/mp4msv.prx",
+			"flash0:/kd/libmp4.prx",
+		};
+		for (int i = 0; i < 2; i++) {
+			if (g_mp4RealModules[i]) {
+				continue;
+			}
+			std::string error;
+			SceUID id = KernelLoadModule(paths[i], &error, true);
+			if (id < 0) {
+				ERROR_LOG(Log::sceUtility, "sceMp4 HLE is disabled, but %s wouldn't load (%s) - "
+					"the game will get unresolved imports", paths[i], error.c_str());
+				return;
+			}
+			int result = __KernelStartModule(id, 0, 0, 0, nullptr, nullptr);
+			if (result < 0) {
+				ERROR_LOG(Log::sceUtility, "Failed to start %s (%08x)", paths[i], result);
+				return;
+			}
+			g_mp4RealModules[i] = id;
+			INFO_LOG(Log::sceUtility, "Loaded the real %s", paths[i]);
+		}
+	}
 }
 
 static void NotifyLoadStatusAtrac(int state, u32 loadAddr, u32 totalSize) {
@@ -138,7 +182,7 @@ static const ModuleLoadInfo moduleLoadInfo[] = {
 	ModuleLoadInfo(0x305, 0x0000a300, "av_vaudio"),
 	ModuleLoadInfo(0x306, 0x00004000, "av_aac"),
 	ModuleLoadInfo(0x307, 0x00000000, "av_g729"),
-	ModuleLoadInfo(0x308, 0x0003c000, "av_mp4", mp4ModuleDeps),
+	ModuleLoadInfo(0x308, 0x0003c000, "av_mp4", mp4ModuleDeps, &NotifyLoadStatusMp4),
 	ModuleLoadInfo(0x3fe, 0x00000000, "me_stuff"),
 	ModuleLoadInfo(0x3ff, 0x00000000, "me_core"),  // ME Core?
 	ModuleLoadInfo(0x400, 0x0000c000, "np_common"),
@@ -320,6 +364,9 @@ void __UtilityInit() {
 	DeactivateDialog();
 	SavedataParam::Init();
 	currentlyLoadedModules.clear();
+	// Vital to reset these between games, otherwise we might think they're already loaded.
+	g_mp4RealModules[0] = 0;
+	g_mp4RealModules[1] = 0;
 	volatileUnlockEvent = CoreTiming::RegisterEvent("UtilityVolatileUnlock", UtilityVolatileUnlock);
 
 	ResetSecondsSinceLastGameSave();
@@ -1220,19 +1267,23 @@ static u32 sceUtilitySetSystemParamString(u32 id, u32 strPtr)
 }
 
 static u32 sceUtilityGetSystemParamString(u32 id, u32 destAddr, int destSize) {
-	if (!Memory::IsValidRange(destAddr, destSize)) {
+	// A size that isn't positive can't hold the string, and that's what the PSP reports - not a
+	// bad-buffer error. Range checking it first would turn a negative size into a huge range.
+	if (destSize > 0 && !Memory::IsValidRange(destAddr, destSize)) {
 		// TODO: What error code?
 		return hleLogError(Log::sceUtility, -1);
 	}
-	char *buf = (char *)Memory::GetPointerWriteUnchecked(destAddr);
 	switch (id) {
 	case PSP_SYSTEMPARAM_ID_STRING_NICKNAME:
+	{
 		// If there's not enough space for the string and null terminator, fail.
 		if (destSize <= (int)g_Config.sNickName.length())
 			return SCE_ERROR_UTILITY_STRING_TOO_LONG;
+		char *buf = (char *)Memory::GetPointerWriteUnchecked(destAddr);
 		// TODO: should we zero-pad the output as strncpy does? And what are the semantics for the terminating null if destSize == length?
 		strncpy(buf, g_Config.sNickName.c_str(), destSize);
 		break;
+	}
 
 	default:
 		return hleLogError(Log::sceUtility, SCE_ERROR_UTILITY_INVALID_SYSTEM_PARAM_ID);
@@ -1263,7 +1314,10 @@ static u32 sceUtilityGetSystemParamInt(u32 id, u32 destaddr) {
 	switch (id) {
 	case PSP_SYSTEMPARAM_ID_INT_ADHOC_CHANNEL:
 		param = g_Config.iWlanAdhocChannel;
-		if (param == PSP_SYSTEMPARAM_ADHOC_CHANNEL_AUTOMATIC) {
+		// Only once adhocctl is up. The FIXME below wondered whether this error depends on that,
+		// and it does - utility/systemparam gets a plain 0 out of the hardware before any adhoc
+		// module is initialized, which is the state nearly every game asks this in.
+		if (param == PSP_SYSTEMPARAM_ADHOC_CHANNEL_AUTOMATIC && netAdhocctlInited) {
 			// FIXME: Actually.. it's always returning 0x800ADF4 regardless using Auto channel or Not, and regardless the connection state either,
 			//        Not sure whether this error code only returned after Adhocctl Initialized (ie. netAdhocctlInited) or also before initialized.
 			// FIXME: Outputted channel (might be unchanged?) either 0 when not connected to a group yet (ie. adhocctlState == ADHOCCTL_STATE_DISCONNECTED),

@@ -50,6 +50,7 @@
 #include "UI/DevScreens.h"
 #include "UI/DeveloperToolsScreen.h"
 #include "UI/DisplayLayoutScreen.h"
+#include "UI/FirmwareScreen.h"
 #include "UI/RemoteISOScreen.h"
 #include "UI/SavedataScreen.h"
 #include "UI/SystemInfoScreen.h"
@@ -439,6 +440,7 @@ void GameSettingsScreen::CreateGraphicsSettings(UI::ViewGroup *graphicsSettings)
 	graphicsSettings->Add(new ItemHeader(gr->T("Frame Rate Control")));
 	static const char *frameSkip[] = {"Off", "1", "2", "3", "4", "5", "6", "7", "8"};
 	PopupMultiChoice *frameSkipping = graphicsSettings->Add(new PopupMultiChoice(&g_Config.iFrameSkip, gr->T("Frame Skipping"), frameSkip, 0, ARRAY_SIZE(frameSkip), I18NCat::GRAPHICS, screenManager()));
+	frameSkipping->SetChoicesUntranslated(1, (int)ARRAY_SIZE(frameSkip) - 1);
 	frameSkipping->SetEnabledFunc([] {
 		return !g_Config.bAutoFrameSkip;
 	});
@@ -512,7 +514,7 @@ void GameSettingsScreen::CreateGraphicsSettings(UI::ViewGroup *graphicsSettings)
 	graphicsSettings->Add(new SettingHint(gr->T("RenderDuplicateFrames Tip", "Can make framerate smoother in games that run at lower framerates"), frameDuplication));
 
 	if (draw->GetDeviceCaps().setMaxFrameLatencySupported) {
-		static const char *bufferOptions[] = { "No buffer", "Up to 1", "Up to 2" };
+		static const char *bufferOptions[] = { "No buffer", "Up to 1" };
 		PopupMultiChoice *inflightChoice = graphicsSettings->Add(new PopupMultiChoice(&g_Config.iInflightFrames, gr->T("Buffer graphics commands"), bufferOptions, 1, ARRAY_SIZE(bufferOptions), I18NCat::GRAPHICS, screenManager()));
 		inflightChoice->OnChoice.Handle(this, &GameSettingsScreen::OnInflightFramesChoice);
 		graphicsSettings->Add(new SettingHint(gr->T("Faster, input lag"), inflightChoice));  // TODO: This hint could use improvement.
@@ -1049,9 +1051,13 @@ void GameSettingsScreen::CreateNetworkingSettings(UI::ViewGroup *networkingSetti
 	dnsServer->SetDisabledPtr(&g_Config.bInfrastructureAutoDNS);
 
 	networkingSettings->Add(new ItemHeader(n->T("UPnP (port-forwarding)")));
-	networkingSettings->Add(new CheckBox(&g_Config.bEnableUPnP, n->T("Enable UPnP", "Enable UPnP (need a few seconds to detect)")))->OnClick.Add([](UI::EventParams &e) {
-		// Wake the UPnP service thread immediately so it reacts to the new setting instead
-		// of waiting for the next periodic retry (or a port request that may never come).
+	// Only togglable outside a game - sceNet latches settings like UPnPUseOriginalPort at boot,
+	// and a game that's already mapped its ports wouldn't cope with them disappearing.
+	CheckBox *enableUPnP = networkingSettings->Add(new CheckBox(&g_Config.bEnableUPnP, n->T("Enable UPnP", "Enable UPnP (need a few seconds to detect)")));
+	enableUPnP->SetEnabled(!PSP_IsInited());
+	enableUPnP->OnClick.Add([](UI::EventParams &e) {
+		// Wake the UPnP service thread so it connects (or tears its mappings back down) right
+		// away, instead of waiting for a port request that may never come.
 		UPnP_Notify();
 	});
 	auto *useOriPort = networkingSettings->Add(new CheckBox(&g_Config.bUPnPUseOriginalPort, n->T("UPnP use original port", "UPnP use original port (Enabled = PSP compatibility)")));
@@ -1065,6 +1071,7 @@ void GameSettingsScreen::CreateNetworkingSettings(UI::ViewGroup *networkingSetti
 	networkingSettings->Add(new PopupMultiChoice(&g_Config.iChatButtonPosition, n->T("Chat Button Position"), chatButtonPositions, 0, ARRAY_SIZE(chatButtonPositions), I18NCat::DIALOG, screenManager()))->SetEnabledPtr(&g_Config.bEnableNetworkChat);
 	static const char *chatScreenPositions[] = { "Bottom Left", "Bottom Center", "Bottom Right", "Top Left", "Top Center", "Top Right" };
 	networkingSettings->Add(new PopupMultiChoice(&g_Config.iChatScreenPosition, n->T("Chat Screen Position"), chatScreenPositions, 0, ARRAY_SIZE(chatScreenPositions), I18NCat::DIALOG, screenManager()))->SetEnabledPtr(&g_Config.bEnableNetworkChat);
+	networkingSettings->Add(new CheckBox(&g_Config.bChatTimestamps, n->T("Show timestamps in chat")))->SetEnabledPtr(&g_Config.bEnableNetworkChat);
 
 	networkingSettings->Add(new ItemHeader(n->T("Quick chat")));
 	CheckBox *qc = networkingSettings->Add(new CheckBox(&g_Config.bEnableQuickChat, n->T("Enable quick chat")));
@@ -1084,6 +1091,7 @@ void GameSettingsScreen::CreateNetworkingSettings(UI::ViewGroup *networkingSetti
 	});
 	static const char *wlanChannels[] = {"Auto", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11"};
 	auto wlanChannelChoice = networkingSettings->Add(new PopupMultiChoice(&g_Config.iWlanAdhocChannel, n->T("WLAN Channel"), wlanChannels, 0, ARRAY_SIZE(wlanChannels), I18NCat::NETWORKING, screenManager()));
+	wlanChannelChoice->SetChoicesUntranslated(1, (int)ARRAY_SIZE(wlanChannels) - 1);
 	for (int i = 0; i < 4; i++) {
 		wlanChannelChoice->HideChoice(i + 2);
 		wlanChannelChoice->HideChoice(i + 7);
@@ -1130,6 +1138,9 @@ void GameSettingsScreen::CreateToolsSettings(UI::ViewGroup *tools) {
 	});
 	tools->Add(new Choice(ri->T("Remote disc streaming")))->OnClick.Add([=](UI::EventParams &) {
 		screenManager()->push(new RemoteISOScreen(gamePath_));
+	});
+	tools->Add(new Choice(sy->T("PSP Firmware")))->OnClick.Add([=](UI::EventParams &) {
+		screenManager()->push(new FirmwareScreen(gamePath_));
 	});
 }
 
@@ -1716,7 +1727,7 @@ void TriggerRestart(const char *why, bool editThenRestore, const Path &gamePath)
 	// Extra save here to make sure the choice really gets saved even if there are shutdown bugs in
 	// the GPU backend code.
 	g_Config.Save(why);
-	std::string param = "--gamesettings";
+	std::string param = "--start-screen=gamesettings";
 	if (editThenRestore) {
 		// We won't pass the gameID, so don't resume back into settings.
 		param.clear();

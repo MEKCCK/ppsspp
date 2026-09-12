@@ -50,6 +50,7 @@
 #include "Core/MIPS/MIPS.h"
 #include "Core/MIPS/MIPSAnalyst.h"
 #include "Core/MIPS/MIPSVFPUUtils.h"
+#include "Core/Debugger/DisassemblyManager.h"
 #include "Core/Debugger/LineInfo.h"
 #include "Core/Debugger/SymbolMap.h"
 #include "Core/System.h"
@@ -62,6 +63,7 @@
 #include "Core/Config.h"
 #include "Core/Core.h"
 #include "Core/Util/PathUtil.h"
+#include "Core/Util/PSARUnpack.h"
 #include "Core/CoreTiming.h"
 #include "Core/CoreParameter.h"
 #include "Core/FileLoaders/RamCachingFileLoader.h"
@@ -254,6 +256,7 @@ static void GetBootError(IdentifiedFileType type, std::string *errorString) {
 		break;
 
 	case IdentifiedFileType::ARCHIVE_7Z: *errorString = "7z file detected (Require 7-Zip)"; break;
+	case IdentifiedFileType::PSP_PKG: *errorString = "PKG game updates need to be installed, not booted."; break;
 	case IdentifiedFileType::PSX_ISO:  *errorString = "PSX game image detected."; break;
 	case IdentifiedFileType::PS2_ISO:  *errorString = "PS2 game image detected."; break;
 	case IdentifiedFileType::PS3_ISO:  *errorString = "PS2 game image detected."; break;
@@ -511,6 +514,11 @@ static bool CPU_Init(FileLoader *fileLoader, IdentifiedFileType type, std::strin
 		g_CoreParameter.mountIsoLoader = ConstructFileLoader(g_CoreParameter.mountIso);
 	}
 
+	// Most game discs carry a firmware updater, so this is where a NAND with nothing (or only the
+	// fonts) in it gets filled in. Has to happen before the mount below: the install erases and
+	// rewrites the very directory flash0:/flash1: point at.
+	AutoInstallFirmwareFromDisc();
+
 	MountFileSystems();
 
 	// Game-specific settings are load from for example Load_PSP_ISO (which calls g_Config.LoadGameConfig).
@@ -616,6 +624,10 @@ void CPU_Shutdown(bool success) {
 
 	pspFileSystem.Shutdown();  // This unmounts all filesystems.
 
+	// Everything the disassembly cache describes - emulated memory and the symbol map - is about
+	// to go away, so drop it here rather than leaving it to whichever debugger UI closes last.
+	ClearDisassemblyCache();
+
 	mipsr4k.Shutdown();
 	Memory::Shutdown();
 	HLEPlugins::Shutdown();
@@ -664,7 +676,9 @@ void PSP_ForceDebugStats(bool enable) {
 	_assert_(g_coreCollectDebugStatsCounter >= 0);
 }
 
-static void InitGPU(std::string *error_string) {
+// Returns false if the GPU couldn't be brought up - in which case it has already set
+// BootState::Failed and torn the CPU back down, so the caller must not carry on.
+static bool InitGPU(std::string *error_string) {
 	if (!gpu) {  // should be!
 		INFO_LOG(Log::Loader, "Starting graphics...");
 		Draw::DrawContext *draw = g_CoreParameter.graphicsContext ? g_CoreParameter.graphicsContext->GetDrawContext() : nullptr;
@@ -675,8 +689,10 @@ static void InitGPU(std::string *error_string) {
 			*error_string = "Unable to initialize rendering engine.";
 			CPU_Shutdown(false);
 			g_bootState = BootState::Failed;
+			return false;
 		}
 	}
+	return true;
 }
 
 bool PSP_InitStart(const CoreParameter &coreParam) {
@@ -752,7 +768,12 @@ bool PSP_InitStart(const CoreParameter &coreParam) {
 		// Initialize the GPU as far as we can here (do things like load cache files).
 		_dbg_assert_(!gpu);
 #ifndef __LIBRETRO__
-		InitGPU(errorString);
+		// Must not stamp Complete over the Failed that InitGPU sets - it has already run
+		// CPU_Shutdown(), so PSP_InitUpdate would take the success path on a core that no longer
+		// exists, right down to a null Memory::base.
+		if (!InitGPU(errorString)) {
+			return;
+		}
 #endif
 		g_bootState = BootState::Complete;
 	});
@@ -784,7 +805,13 @@ BootState PSP_InitUpdate(std::string *error_string) {
 	}
 
 #ifdef __LIBRETRO__
-	InitGPU(error_string);
+	if (!InitGPU(error_string)) {
+		// Same as the Failed branch above - the core is already gone.
+		Core_NotifyLifecycle(CoreLifecycle::START_COMPLETE);
+		*error_string = g_CoreParameter.errorString;
+		g_bootState = BootState::Off;
+		return BootState::Failed;
+	}
 #endif
 
 	// Ok, async part of the boot completed, let's finish up things on the main thread.

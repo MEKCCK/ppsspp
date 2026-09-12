@@ -88,6 +88,10 @@ extern u32 __nx_applet_type; // Not exposed through a header?
 GlobalUIState lastUIState = UISTATE_MENU;
 GlobalUIState GetUIState();
 
+// How long the cursor stays visible after the mouse stops moving, when auto-hiding it.
+static constexpr double CURSOR_HIDE_DELAY = 0.5;
+static double g_lastCursorMoveTime = 0.0;
+
 static bool g_QuitRequested = false;
 static bool g_RestartRequested = false;
 
@@ -696,6 +700,17 @@ static void InitializeFilters(std::vector<std::string> &filters, BrowseFileType 
 	filters.push_back("*");
 }
 
+#if PPSSPP_PLATFORM(LINUX) && !PPSSPP_PLATFORM(ANDROID)
+// Opens a file or folder in whatever the desktop associates with it, without blocking the caller.
+static void LaunchXdgOpen(const std::string &path) {
+	pid_t pid = fork();
+	if (pid == 0) {
+		execlp("xdg-open", "xdg-open", path.c_str(), nullptr);
+		_exit(1);
+	}
+}
+#endif
+
 bool System_MakeRequest(SystemRequestType type, int requestId, const std::string &param1, const std::string &param2, int64_t param3, int64_t param4) {
 	switch (type) {
 	case SystemRequestType::RESTART_APP:
@@ -866,14 +881,7 @@ bool System_MakeRequest(SystemRequestType type, int requestId, const std::string
 #elif PPSSPP_PLATFORM(MAC)
 		OSXShowInFinder(param1.c_str());
 #elif (PPSSPP_PLATFORM(LINUX) && !PPSSPP_PLATFORM(ANDROID))
-		pid_t pid = fork();
-		if (pid < 0)
-			return true;
-
-		if (pid == 0) {
-			execlp("xdg-open", "xdg-open", param1.c_str(), nullptr);
-			exit(1);
-		}
+		LaunchXdgOpen(param1);
 #endif /* PPSSPP_PLATFORM(WINDOWS) */
 		return true;
 	}
@@ -941,7 +949,6 @@ std::vector<std::string> System_GetCameraDeviceList() {
 void System_LaunchUrl(LaunchUrlType urlType, std::string_view url) {
 	switch (urlType) {
 	case LaunchUrlType::BROWSER_URL:
-	case LaunchUrlType::MARKET_URL:
 	{
 #if PPSSPP_PLATFORM(SWITCH)
 		Uuid uuid = { 0 };
@@ -986,6 +993,8 @@ void System_LaunchUrl(LaunchUrlType urlType, std::string_view url) {
 #if defined(__APPLE__)
 		// If it's a folder and we're on a mac, open it in finder.
 		OSXShowInFinder(std::string(url).c_str());
+#elif PPSSPP_PLATFORM(LINUX) && !PPSSPP_PLATFORM(ANDROID)
+		LaunchXdgOpen(std::string(url));
 #endif
 		// INFO_LOG(Log::System, "LaunchUrlType::LOCAL_FILE not implemented on this platform");
 		break;
@@ -1194,7 +1203,8 @@ bool System_GetPropertyBool(SystemProperty prop) {
 		return true;  // FileUtil.cpp: OpenFileInEditor
 #ifndef HTTPS_NOT_AVAILABLE
 	case SYSPROP_SUPPORTS_HTTPS:
-		return !g_Config.bDisableHTTPS;
+		// On Linux this also depends on whether libcurl could be loaded.
+		return !g_Config.bDisableHTTPS && net::HTTPSAvailable();
 #endif
 case SYSPROP_HAS_FOLDER_BROWSER:
 case SYSPROP_HAS_FILE_BROWSER:
@@ -1330,12 +1340,7 @@ static void ProcessSDLEvent(SDL_Window *window, const SDL_Event &event, InputSta
 				g_Config.iWindowWidth = windowWidth;
 				g_Config.iWindowHeight = windowHeight;
 			}
-			// Hide/Show cursor correctly toggling fullscreen
-			if (lastUIState == UISTATE_INGAME && fullscreen && !g_Config.bShowTouchControls) {
-				SDL_HideCursor();
-			} else if (lastUIState != UISTATE_INGAME || !fullscreen) {
-				SDL_ShowCursor();
-			}
+			// The cursor visibility is handled by UpdateSDLCursor, which runs every frame.
 			break;
 		}
 	case SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED:
@@ -1605,6 +1610,11 @@ static void ProcessSDLEvent(SDL_Window *window, const SDL_Event &event, InputSta
 			NativeTouch(input);
 			NativeMouseDelta(event.motion.xrel, event.motion.yrel);
 
+			// Require a bit of movement to un-hide the cursor, so that jitter doesn't keep it up.
+			if (fabsf(event.motion.xrel) > 1.0f || fabsf(event.motion.yrel) > 1.0f) {
+				g_lastCursorMoveTime = time_now_d();
+			}
+
 			UpdateCursor();
 			break;
 		}
@@ -1716,12 +1726,23 @@ void UpdateTextFocus(SDL_Window *window) {
 
 void UpdateSDLCursor() {
 #if !defined(MOBILE_DEVICE)
-	if (lastUIState != GetUIState()) {
-		lastUIState = GetUIState();
-		if (lastUIState == UISTATE_INGAME && g_Config.bFullScreen && !g_Config.bShowTouchControls)
-			SDL_HideCursor();
-		if (lastUIState != UISTATE_INGAME || !g_Config.bFullScreen)
+	lastUIState = GetUIState();
+
+	// In fullscreen while in-game, the cursor auto-hides once the mouse has been still for a
+	// moment, and comes back as soon as it's moved again. Same idea as the Windows version.
+	// While a button is held the user is interacting, so keep it visible.
+	const bool buttonDown = (SDL_GetMouseState(nullptr, nullptr) & SDL_BUTTON_LMASK) != 0;
+	const bool autoHide = g_Config.bFullScreen && lastUIState == UISTATE_INGAME && !buttonDown;
+	const bool visible = !autoHide || time_now_d() - g_lastCursorMoveTime < CURSOR_HIDE_DELAY;
+
+	static bool cursorVisible = true;
+	if (visible != cursorVisible) {
+		cursorVisible = visible;
+		if (visible) {
 			SDL_ShowCursor();
+		} else {
+			SDL_HideCursor();
+		}
 	}
 #endif
 }
@@ -1772,6 +1793,17 @@ int main(int argc, char *argv[]) {
 	SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0");
 #endif
 
+	// SDL's automatic pick between Wayland and X11 doesn't always land on Wayland even in a
+	// Wayland session, and going through XWayland instead costs us scaling and input quality.
+	// So ask for it explicitly when the session looks like Wayland - unless the user has set
+	// SDL_VIDEO_DRIVER, in which case they've already told us what they want.
+	// WAYLAND_DISPLAY is only set on Wayland sessions, so this is a no-op elsewhere.
+	bool preferWayland = false;
+	if (getenv("WAYLAND_DISPLAY") && !getenv("SDL_VIDEO_DRIVER")) {
+		SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "wayland");
+		preferWayland = true;
+	}
+
 	bool vulkanMayBeAvailable = false;
 	if (VulkanMayBeAvailable()) {
 		fprintf(stderr, "DEBUG: Vulkan might be available.\n");
@@ -1800,10 +1832,29 @@ int main(int argc, char *argv[]) {
 		fprintf(stderr, "Failed to initialize SDL with joystick support. Retrying without.\n");
 		joystick_enabled = false;
 		if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO)) {
-			fprintf(stderr, "Unable to initialize SDL: %s\n", SDL_GetError());
-			return 1;
+			bool initialized = false;
+			if (preferWayland) {
+				// Asking for Wayland may be exactly what failed, so let SDL pick instead.
+				fprintf(stderr, "Unable to initialize SDL with the Wayland video driver (%s). Letting SDL choose.\n", SDL_GetError());
+				SDL_SetHint(SDL_HINT_VIDEO_DRIVER, nullptr);
+				preferWayland = false;
+				// Retry with joystick support - it was the video driver that failed, not the joysticks.
+				if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_JOYSTICK | SDL_INIT_GAMEPAD | SDL_INIT_AUDIO)) {
+					joystick_enabled = true;
+					initialized = true;
+				} else {
+					initialized = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO);
+				}
+			}
+			if (!initialized) {
+				fprintf(stderr, "Unable to initialize SDL: %s\n", SDL_GetError());
+				return 1;
+			}
 		}
 	}
+
+	const char *videoDriver = SDL_GetCurrentVideoDriver();
+	fprintf(stderr, "Info: SDL video driver: %s\n", videoDriver ? videoDriver : "(none)");
 
 	fprintf(stderr, "Info: We compiled against SDL version %d.%d.%d", SDL_VERSIONNUM_MAJOR(compiled), SDL_VERSIONNUM_MINOR(compiled), SDL_VERSIONNUM_MICRO(compiled));
 	if (compiled != linked) {

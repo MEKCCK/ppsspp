@@ -22,6 +22,9 @@
 
 #include "Common/Math/CrossSIMD.h"
 
+#include "Common/File/FileUtil.h"
+#include "Common/Data/Text/I18n.h"
+#include "Common/System/OSD.h"
 #include "Common/Profiler/Profiler.h"
 
 #include "Common/Log.h"
@@ -153,6 +156,9 @@ static const HLEModuleMeta g_moduleMeta[] = {
 	{"scePsmfPlayer", "scePsmfPlayer", DisableHLEFlags::scePsmfPlayer},
 	{"sceSAScore", "sceSasCore"},
 	{"sceCcc_Library", "sceCcc", DisableHLEFlags::sceCcc},
+	// libmp4.prx needs 41 functions from mp4msv.prx, so the two only make sense swapped together.
+	{"sceMp4_library", "sceMp4", DisableHLEFlags::sceMp4},
+	{"mp4msv_module", "mp4msv", DisableHLEFlags::sceMp4},
 	{"SceParseHTTPheader_Library", "sceParseHttp", DisableHLEFlags::sceParseHttp},
 	{"SceParseURI_Library"},
 	// Guessing these names
@@ -197,8 +203,23 @@ DisableHLEFlags AlwaysDisableHLEFlags() {
 	return DisableHLEFlags::scePsmf | DisableHLEFlags::scePsmfPlayer | DisableHLEFlags::sceCcc;
 }
 
+// Which modules we're HLE-ing is part of the machine's state, not a live setting: it's decided
+// when each module is loaded, and the syscall stubs written into memory then are what a savestate
+// captures. So latch it on the first use after boot, save it in the state, and restore it on load
+// - otherwise a state made on one side of the boundary gets its imports re-resolved against the
+// other, and every call into the module lands on an unresolved stub. Changing the setting takes
+// effect on the next boot, which is the only point it could have taken effect anyway.
+static DisableHLEFlags g_effectiveDisableHLE;
+static bool g_disableHLELatched;
+
+// Flags the user asked for that we can't honour this boot, because the firmware modules they
+// need aren't in the NAND directory. Subtracted in ComputeDisableHLEFlags so that a missing dump
+// leaves the HLE in place rather than handing the game unresolved imports, which is much worse
+// than our stubs. Recomputed per boot, since the dump can appear between runs.
+static DisableHLEFlags g_unavailableDisableFlags = (DisableHLEFlags)0;
+
 // Process compat flags.
-static DisableHLEFlags GetDisableHLEFlags() {
+static DisableHLEFlags ComputeDisableHLEFlags() {
 	DisableHLEFlags flags = (DisableHLEFlags)g_Config.iDisableHLE | AlwaysDisableHLEFlags();
 	if (PSP_CoreParameter().compat.flags().DisableHLESceFont) {
 		flags |= DisableHLEFlags::sceFont;
@@ -208,11 +229,38 @@ static DisableHLEFlags GetDisableHLEFlags() {
 	}
 
 	flags &= ~(DisableHLEFlags)g_Config.iForceEnableHLE;
+	// Anything whose firmware module isn't actually present stays HLE'd.
+	flags &= ~g_unavailableDisableFlags;
 	return flags;
 }
 
+static DisableHLEFlags GetDisableHLEFlags() {
+	if (!g_disableHLELatched) {
+		g_effectiveDisableHLE = ComputeDisableHLEFlags();
+		g_disableHLELatched = true;
+	}
+	return g_effectiveDisableHLE;
+}
+
+DisableHLEFlags GetEffectiveDisableHLEFlags() {
+	return GetDisableHLEFlags();
+}
+
 // Note: name is the modname from prx, not the export module name!
+// See SetForceRealModuleLoads.
+static bool g_forceRealModuleLoads = false;
+
+void SetForceRealModuleLoads(bool force) {
+	g_forceRealModuleLoads = force;
+}
+
 bool ShouldHLEModule(std::string_view modname, bool *wasDisabledManually) {
+	if (g_forceRealModuleLoads) {
+		if (wasDisabledManually) {
+			*wasDisabledManually = false;
+		}
+		return false;
+	}
 	if (wasDisabledManually) {
 		*wasDisabledManually = false;
 	}
@@ -262,17 +310,47 @@ static void hleDelayResultFinish(u64 userdata, int cycleslate) {
 		WARN_LOG(Log::HLE, "Someone else woke up HLE-blocked thread %d?", threadID);
 }
 
+// Which firmware files a flag needs before it can be honoured.
+static void CheckDisableHLEAvailability() {
+	g_unavailableDisableFlags = (DisableHLEFlags)0;
+
+	if ((DisableHLEFlags)g_Config.iDisableHLE & DisableHLEFlags::sceMp4) {
+		const Path kd = g_Config.nandRootDirectory / "flash0" / "kd";
+		if (!File::Exists(kd / "libmp4.prx") || !File::Exists(kd / "mp4msv.prx")) {
+			g_unavailableDisableFlags |= DisableHLEFlags::sceMp4;
+			ERROR_LOG(Log::HLE, "Asked to run the real sceMp4, but %s doesn't have libmp4.prx and "
+				"mp4msv.prx - keeping the HLE.", kd.c_str());
+			auto sy = GetI18NCategory(I18NCat::SYSTEM);
+			g_OSD.Show(OSDType::MESSAGE_WARNING,
+				sy->T("Real sceMp4 needs a firmware dump in the NAND folder - using HLE instead"), 6.0f);
+		}
+	}
+}
+
 void HLEInit() {
+	CheckDisableHLEAvailability();
 	RegisterAllModules();
+	// Latched lazily rather than here: the compat flags this depends on aren't loaded yet.
+	g_disableHLELatched = false;
 	g_stackSize = 0;
 	delayedResultEvent = CoreTiming::RegisterEvent("HLEDelayedResult", hleDelayResultFinish);
 	g_idleOp = GetSyscallOp("FakeSysCalls", NID_IDLE);
 }
 
 void HLEDoState(PointerWrap &p) {
-	auto s = p.Section("HLE", 1, 2);
+	auto s = p.Section("HLE", 1, 3);
 	if (!s)
 		return;
+
+	if (s >= 3) {
+		int disableHLE = (int)GetDisableHLEFlags();
+		Do(p, disableHLE);
+		if (p.mode == p.MODE_READ) {
+			// Whatever the config says now, this state's modules were loaded under these flags.
+			g_effectiveDisableHLE = (DisableHLEFlags)disableHLE;
+			g_disableHLELatched = true;
+		}
+	}
 
 	// Can't be inside a syscall when saving state, reset this so errors aren't misleading.
 	if (g_stackSize) {

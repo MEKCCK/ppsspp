@@ -515,9 +515,6 @@ void NativeInit(int argc, const char *argv[], const CommandLineOptions &cmdLineO
 
 	IncrementDebugCounter(DebugCounter::APP_BOOT);
 
-	// Probably an excessive timeout. it only causes delays on shutdown, though.
-	__UPnPInit(2000);
-
 	ShaderTranslationInit();
 
 	g_threadManager.Init(cpu_info.num_cores, cpu_info.logical_cpu_count);
@@ -704,6 +701,11 @@ void NativeInit(int argc, const char *argv[], const CommandLineOptions &cmdLineO
 		g_Config.LoadAppendedConfig();
 	}
 
+	// Has to be after the config is loaded: it only starts a service thread if UPnP is enabled,
+	// and g_Config.Init() above doesn't read the ini, it just builds a lookup table.
+	// Probably an excessive timeout. It only causes delays on shutdown, though.
+	__UPnPInit(2000);
+
 	// This parameter should be a boot filename. Only accept it if we
 	// don't already have one.
 	if (!cmdLineOptions.bootFilenames.empty()) {
@@ -805,8 +807,8 @@ void NativeInit(int argc, const char *argv[], const CommandLineOptions &cmdLineO
 		// Launch into specified start screen. This is useful for testing UI, more screens can be easily added here.
 		if (equals(cmdLineOptions.startScreen.value(), "touchscreentest")) {
 			g_screenManager->switchScreen(new MainScreen());
+			g_screenManager->push(new TouchTestScreen(Path()));
 		}
-		g_screenManager->push(new TouchTestScreen(Path()));
 		if (equals(cmdLineOptions.startScreen.value(), "gamesettings")) {
 			g_screenManager->switchScreen(new LogoScreen(AfterLogoScreen::TO_GAME_SETTINGS));
 		} else if (equals(cmdLineOptions.startScreen.value(), "developertools")) {
@@ -833,7 +835,7 @@ void NativeInit(int argc, const char *argv[], const CommandLineOptions &cmdLineO
 		flags |= WebServerFlags::DEBUGGER;
 	}
 	if (flags != WebServerFlags::NONE) {
-		StartWebServer(WebServerFlags::ALL);
+		StartWebServer(flags);
 	}
 
 	std::string sysName = System_GetProperty(SYSPROP_NAME);
@@ -1044,7 +1046,13 @@ void NativeShutdownGraphics(GraphicsContext *graphicsContext) {
 		}
 		ImGui_ImplThin3d_DestroyDeviceObjects();
 		ImGui_ImplThin3d_Shutdown();
+		// Destroy the debugger here, while the things it refers to are still alive. If left to
+		// static destruction, ~ImDisasmView runs after Core's globals are gone and its
+		// g_disassemblyManager.clear() walks a destroyed map (and locks a destroyed mutex).
+		imDebugger_.reset();
 		ImGui::DestroyContext(ctx_);
+		ctx_ = nullptr;
+		imguiInited_ = false;
 	}
 
 #if PPSSPP_PLATFORM(WINDOWS) && !PPSSPP_PLATFORM(UWP)
@@ -1728,7 +1736,10 @@ void NativeAxis(const AxisInput *axes, size_t count) {
 
 	for (size_t i = 0; i < count; i++) {
 		const AxisInput &axis = axes[i];
-		HLEPlugins::PluginDataAxis[axis.axisId] = axis.value;
+		// axisId comes straight from the device, and can exceed the axes we know about.
+		if ((size_t)axis.axisId < JOYSTICK_AXIS_MAX) {
+			HLEPlugins::PluginDataAxis[axis.axisId] = axis.value;
+		}
 	}
 }
 
@@ -1850,8 +1861,6 @@ void NativeShutdown() {
 	ShutdownWebServer();
 
 	__UPnPShutdown();
-
-	g_PortManager.Shutdown();
 
 	net::Shutdown();
 

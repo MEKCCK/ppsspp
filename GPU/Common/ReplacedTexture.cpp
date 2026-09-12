@@ -106,7 +106,10 @@ ReplacedTexture::~ReplacedTexture() {
 	}
 
 	for (auto &level : levels_) {
-		vfs_->ReleaseFile(level.fileRef);
+		// Null when replacement was switched off after we were cached - see NotifyConfigChanged.
+		if (vfs_) {
+			vfs_->ReleaseFile(level.fileRef);
+		}
 		level.fileRef = nullptr;
 	}
 }
@@ -201,7 +204,11 @@ inline uint32_t RoundUpTo4(uint32_t value) {
 }
 
 void ReplacedTexture::Prepare(VFSBackend *vfs) {
-	_assert_(vfs != nullptr);
+	if (!vfs) {
+		// Replacement was switched off while this was queued. Nothing to load from any more.
+		SetState(ReplacementState::NOT_FOUND);
+		return;
+	}
 
 	this->vfs_ = vfs;
 
@@ -714,7 +721,6 @@ ReplacedTexture::LoadLevelResult ReplacedTexture::LoadLevelData(VFSFileReference
 		png.format = PNG_FORMAT_RGBA;
 
 		std::vector<uint8_t> &out = data_[mipLevel];
-		// TODO: Should probably try to handle out-of-memory gracefully here.
 		out.resize(level.w * level.h * 4);
 		if (!png_image_finish_read(&png, nullptr, &out[0], level.w * 4, nullptr)) {
 			ERROR_LOG(Log::TexReplacement, "Could not load texture replacement: %s - %s", filename.c_str(), png.message);

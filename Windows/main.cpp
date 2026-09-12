@@ -144,7 +144,6 @@ void System_LaunchUrl(LaunchUrlType urlType, std::string_view url) {
 	case LaunchUrlType::BROWSER_URL:
 	case LaunchUrlType::LOCAL_FILE:
 	case LaunchUrlType::LOCAL_FOLDER:
-	case LaunchUrlType::MARKET_URL:
 	case LaunchUrlType::EMAIL_ADDRESS:
 		// ShellExecute handles everything.
 	{
@@ -1251,8 +1250,8 @@ int WINAPI WinMain(HINSTANCE _hInstance, HINSTANCE hPrevInstance, LPSTR szCmdLin
 			[](GraphicsContext *graphicsContext) {
 				NativeFrame(graphicsContext);
 				return GetUIState() != UISTATE_EXIT;
-		})) {
-			HandleGraphicsFailure("Failed to initialize main thread function.");
+		}, &errorMessage)) {
+			HandleGraphicsFailure(errorMessage);
 			return;
 		}
 		graphicsContext->ShutdownAPI();
@@ -1313,15 +1312,17 @@ int WINAPI WinMain(HINSTANCE _hInstance, HINSTANCE hPrevInstance, LPSTR szCmdLin
 	_dbg_assert_(mainThread.joinable());
 	mainThread.join();
 
+	// The debugger windows reach into core state as they go away (CtrlDisAsmView touches
+	// g_disassemblyManager, for example), so tear them down while the core is still around.
+	MainWindow::DestroyDebugWindows();
+	DialogManager::DestroyAll();
+
 	// It's safe to call NativeShutdown, we've joined the main thread.
 	NativeShutdown();
 
 	g_VFS.Clear();
 
 	// g_InputManager.StopPolling() is called in WM_DESTROY
-
-	MainWindow::DestroyDebugWindows();
-	DialogManager::DestroyAll();
 
 	TimeShutdown();
 

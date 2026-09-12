@@ -165,7 +165,8 @@ SPIRV_CROSS_FILES := \
   $(SRC)/ext/SPIRV-Cross/spirv_cross_parsed_ir.cpp
 
 NAETT_FILES := \
-  ${SRC}/ext/naett/naett.c
+  ${SRC}/ext/naett-lib/src/naett_core.c \
+  ${SRC}/ext/naett-lib/src/naett_android.c
 
 MINIMP3_FILES := \
     ${SRC}/ext/minimp3/minimp3.cpp
@@ -810,7 +811,9 @@ EXEC_AND_LIB_FILES := \
   $(SRC)/Core/Util/GameManager.cpp \
   $(SRC)/Core/Util/BlockAllocator.cpp \
   $(SRC)/Core/Util/PPGeDraw.cpp \
+  $(SRC)/Core/Util/KL4E.cpp \
   $(SRC)/Core/Util/PSARUnpack.cpp \
+  $(SRC)/Core/Util/PkgUnpack.cpp \
   $(SRC)/Core/Util/RecentFiles.cpp \
   $(SRC)/Core/Util/VideoPlayer.cpp \
   $(SRC)/git-version.cpp
@@ -985,6 +988,8 @@ LOCAL_SRC_FILES := \
   $(SRC)/UI/BaseScreens.cpp \
   $(SRC)/UI/Background.cpp \
   $(SRC)/UI/CwCheatScreen.cpp \
+  $(SRC)/UI/InstallPkgScreen.cpp \
+  $(SRC)/UI/FirmwareScreen.cpp \
   $(SRC)/UI/InstallUpdateScreen.cpp \
   $(SRC)/UI/InstallZipScreen.cpp \
   $(SRC)/UI/JitCompareScreen.cpp \
@@ -1012,6 +1017,7 @@ ifeq ($(HEADLESS),1)
   LOCAL_MODULE := ppsspp_headless
   LOCAL_SRC_FILES := \
     $(SRC)/headless/Headless.cpp \
+    $(SRC)/headless/ReverseEngineer.cpp \
     $(SRC)/headless/Compare.cpp
 
   include $(BUILD_EXECUTABLE)

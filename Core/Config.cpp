@@ -234,6 +234,7 @@ static const ConfigSetting generalSettings[] = {
 	ConfigSetting("FileLogging", SETTING(g_Config, bEnableFileLogging), false, CfgFlag::PER_GAME),
 	ConfigSetting("AutoRun", SETTING(g_Config, bAutoRun), true, CfgFlag::DEFAULT),
 	ConfigSetting("IgnoreBadMemAccess", SETTING(g_Config, bIgnoreBadMemAccess), true, CfgFlag::DEFAULT),
+	ConfigSetting("EnableFPUExceptionTraps", SETTING(g_Config, bEnableFPUExceptionTraps), false, CfgFlag::DEFAULT),
 	ConfigSetting("CurrentDirectory", SETTING(g_Config, currentDirectory), "", CfgFlag::DEFAULT),
 	ConfigSetting("ShowDebuggerOnLoad", SETTING(g_Config, bShowDebuggerOnLoad), false, CfgFlag::DEFAULT),
 	ConfigSetting("ShowImDebugger", SETTING(g_Config, bShowImDebugger), false, CfgFlag::DONT_SAVE),
@@ -298,6 +299,7 @@ static const ConfigSetting generalSettings[] = {
 	ConfigSetting("AutoSaveSymbolMap", SETTING(g_Config, bAutoSaveSymbolMap), false, CfgFlag::PER_GAME),
 	ConfigSetting("CompressSymbols", SETTING(g_Config, bCompressSymbols), true, CfgFlag::DEFAULT),
 	ConfigSetting("CacheFullIsoInRam", SETTING(g_Config, bCacheFullIsoInRam), false, CfgFlag::PER_GAME),
+	ConfigSetting("AutoUpgradeFirmware", SETTING(g_Config, bAutoUpgradeFirmware), true, CfgFlag::DEFAULT),
 	ConfigSetting("RemoteISOPort", SETTING(g_Config, iRemoteISOPort), 0, CfgFlag::DEFAULT),
 	ConfigSetting("MHOverlayPosition", SETTING(g_Config, iMHOverlayPosition), 3, CfgFlag::DEFAULT),
 	ConfigSetting("LastRemoteISOServer", SETTING(g_Config, sLastRemoteISOServer), "", CfgFlag::DEFAULT),
@@ -755,7 +757,7 @@ static const ConfigSetting graphicsSettings[] = {
 	ConfigSetting("GfxDebugOutput", SETTING(g_Config, bGfxDebugOutput), false, CfgFlag::DONT_SAVE),
 	ConfigSetting("LogFrameDrops", SETTING(g_Config, bLogFrameDrops), false, CfgFlag::DEFAULT),
 
-	ConfigSetting("InflightFrames", SETTING(g_Config, iInflightFrames), 3, CfgFlag::DEFAULT),
+	ConfigSetting("InflightFrames", SETTING(g_Config, iInflightFrames), 2, CfgFlag::DEFAULT),
 	ConfigSetting("RenderDuplicateFrames", SETTING(g_Config, bRenderDuplicateFrames), false, CfgFlag::PER_GAME),
 
 	ConfigSetting("MultiThreading", SETTING(g_Config, bRenderMultiThreading), true, CfgFlag::DEFAULT),
@@ -1057,6 +1059,7 @@ static const ConfigSetting networkSettings[] = {
 	ConfigSetting("EnableNetworkChat", SETTING(g_Config, bEnableNetworkChat), false, CfgFlag::PER_GAME),
 	ConfigSetting("ChatButtonPosition", SETTING(g_Config, iChatButtonPosition), (int)ScreenEdgePosition::BOTTOM_LEFT, CfgFlag::PER_GAME),
 	ConfigSetting("ChatScreenPosition", SETTING(g_Config, iChatScreenPosition), (int)ScreenEdgePosition::BOTTOM_LEFT, CfgFlag::PER_GAME),
+	ConfigSetting("ChatTimestamps", SETTING(g_Config, bChatTimestamps), true, CfgFlag::PER_GAME),
 	ConfigSetting("EnableQuickChat", SETTING(g_Config, bEnableQuickChat), true, CfgFlag::PER_GAME),
 	ConfigSetting("QuickChat1", SETTING(g_Config, sQuickChat[0]), "Quick Chat 1", CfgFlag::PER_GAME),
 	ConfigSetting("QuickChat2", SETTING(g_Config, sQuickChat[1]), "Quick Chat 2", CfgFlag::PER_GAME),
@@ -1382,7 +1385,14 @@ void Config::Load(const char *iniFileName, const char *controllerIniFilename) {
 	// Load post process shader values
 	mPostShaderSetting.clear();
 	for (const auto &[key, value] : postShaderSetting->ToMap()) {
-		mPostShaderSetting[key] = std::stof(value);
+		// The ini is user-editable, and std::stof throws - which would take the process down
+		// during startup config load. LoadGameConfig already parses this section this way.
+		float f = 0.0f;
+		if (sscanf(value.c_str(), "%f", &f) == 1) {
+			mPostShaderSetting[key] = f;
+		} else {
+			WARN_LOG(Log::Config, "Invalid float value string for param %s: '%s'", key.c_str(), value.c_str());
+		}
 	}
 
 	const Section *hostOverrideSetting = iniFile.GetOrCreateSection("HostAliases");
@@ -1604,6 +1614,9 @@ void Config::PostLoadCleanup() {
 
 	// Clamp save state slot count to somewhat sane limits.
 	iSaveStateSlotCount = std::clamp(iSaveStateSlotCount, 1, 100);
+
+	// Three frames in flight showed no benefit over two, so the option is gone. Squash old values.
+	iInflightFrames = std::clamp(iInflightFrames, 1, 2);
 }
 
 void Config::PreSaveCleanup() {
@@ -1955,7 +1968,12 @@ void Config::UnloadGameConfig() {
 	auto postShaderSetting = iniFile.GetOrCreateSection("PostShaderSetting")->ToMap();
 	mPostShaderSetting.clear();
 	for (const auto &[k, v] : postShaderSetting) {
-		mPostShaderSetting[k] = std::stof(v);
+		float f = 0.0f;
+		if (sscanf(v.c_str(), "%f", &f) == 1) {
+			mPostShaderSetting[k] = f;
+		} else {
+			WARN_LOG(Log::Config, "Invalid float value string for param %s: '%s'", k.c_str(), v.c_str());
+		}
 	}
 
 	auto postShaderChain = iniFile.GetOrCreateSection("PostShaderList")->ToMap();
