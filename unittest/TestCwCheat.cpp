@@ -285,6 +285,31 @@ static bool TestCheatParseMultiGame() {
 	return true;
 }
 
+static bool TestCheatTextLineClassification() {
+	// Trimming means leading spaces and CRLF endings do not matter.
+	EXPECT_EQ_STR(CheatFileText::TrimLine("  _C0 Name\r"), std::string("_C0 Name"));
+
+	EXPECT_TRUE(CheatFileText::IsBlockBoundary("_C0 Name"));
+	EXPECT_TRUE(CheatFileText::IsBlockBoundary("  _S ULUS10000"));
+	EXPECT_TRUE(CheatFileText::IsBlockBoundary("_G Game"));
+	EXPECT_FALSE(CheatFileText::IsBlockBoundary("_L 0x00000001 0x00000002"));
+	EXPECT_FALSE(CheatFileText::IsBlockBoundary("// comment"));
+	EXPECT_FALSE(CheatFileText::IsBlockBoundary(""));
+
+	EXPECT_TRUE(CheatFileText::IsDirectiveLine("_S ULUS10000", 'S'));
+	EXPECT_FALSE(CheatFileText::IsDirectiveLine("_G Game", 'S'));
+	EXPECT_TRUE(CheatFileText::IsDirectiveLine("_G Game", 'G'));
+	EXPECT_FALSE(CheatFileText::IsDirectiveLine("_L 0x00000001 0x00000002", 'G'));
+
+	EXPECT_TRUE(CheatFileText::IsCheatNameLine("_C0 Name"));
+	EXPECT_TRUE(CheatFileText::IsCheatNameLine("_C9 Name"));
+	EXPECT_FALSE(CheatFileText::IsCheatNameLine("_C Name"));
+	EXPECT_FALSE(CheatFileText::IsCheatNameLine("_CX Name"));
+	EXPECT_FALSE(CheatFileText::IsCheatNameLine("_L 0x00000001 0x00000002"));
+	EXPECT_FALSE(CheatFileText::IsCheatNameLine("_C"));
+	return true;
+}
+
 bool TestCwCheat() {
 	if (!TestCheatTextSplitJoin())
 		return false;
@@ -303,6 +328,8 @@ bool TestCwCheat() {
 	if (!TestCheatInfoDisabledAndEmpty())
 		return false;
 	if (!TestCheatParseMultiGame())
+		return false;
+	if (!TestCheatTextLineClassification())
 		return false;
 	return true;
 }

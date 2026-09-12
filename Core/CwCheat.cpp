@@ -1282,7 +1282,21 @@ std::string JoinLines(const std::vector<std::string> &lines, bool trailingNewlin
 }
 
 // A new cheat block starts at any _C/_S/_G line (after trimming).
-static bool IsBlockBoundary(std::string_view line) {
+std::string TrimLine(std::string_view line) {
+	return TrimString(line);
+}
+
+bool IsDirectiveLine(std::string_view line, char directive) {
+	const std::string trimmed = TrimString(line);
+	return trimmed.size() >= 2 && trimmed[0] == '_' && trimmed[1] == directive;
+}
+
+bool IsCheatNameLine(std::string_view line) {
+	const std::string trimmed = TrimString(line);
+	return trimmed.size() >= 3 && trimmed[0] == '_' && trimmed[1] == 'C' && trimmed[2] >= '0' && trimmed[2] <= '9';
+}
+
+bool IsBlockBoundary(std::string_view line) {
 	const std::string trimmed = TrimString(line);
 	return trimmed.size() >= 2 && trimmed[0] == '_' && (trimmed[1] == 'C' || trimmed[1] == 'S' || trimmed[1] == 'G');
 }
@@ -1301,7 +1315,7 @@ int BlockEndLine(const std::vector<std::string> &lines, int lineNum) {
 	}
 	// Blank lines at the end of the range are the layout between cheats, not part of the
 	// cheat: keeping them out means editing one cheat leaves the file looking the same.
-	while (end > start + 1 && TrimString(lines[end - 1]).empty()) {
+	while (end > start + 1 && TrimLine(lines[end - 1]).empty()) {
 		--end;
 	}
 	return end;
@@ -1336,7 +1350,7 @@ bool RemoveCheatBlock(std::vector<std::string> &lines, int lineNum) {
 	lines.erase(lines.begin() + start, lines.begin() + end);
 	// Drop the blank separator line in front of it too, so removing a cheat does not
 	// leave a double blank line behind.
-	if (start > 0 && start - 1 < (int)lines.size() && TrimString(lines[start - 1]).empty()) {
+	if (start > 0 && start - 1 < (int)lines.size() && TrimLine(lines[start - 1]).empty()) {
 		lines.erase(lines.begin() + (start - 1));
 	}
 	return true;
@@ -1347,7 +1361,7 @@ void AppendCheatBlock(std::vector<std::string> &lines, const std::vector<std::st
 		return;
 	}
 	// Keep a blank separator line if the file does not already end with one.
-	if (!lines.empty() && !TrimString(lines.back()).empty()) {
+	if (!lines.empty() && !TrimLine(lines.back()).empty()) {
 		lines.emplace_back();
 	}
 	lines.insert(lines.end(), blockLines.begin(), blockLines.end());

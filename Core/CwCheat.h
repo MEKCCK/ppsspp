@@ -97,6 +97,12 @@ namespace CheatFileText {
 	bool ReplaceCheatBlock(std::vector<std::string> &lines, int lineNum, const std::vector<std::string> &blockLines);
 	bool RemoveCheatBlock(std::vector<std::string> &lines, int lineNum);
 	void AppendCheatBlock(std::vector<std::string> &lines, const std::vector<std::string> &blockLines);
+
+	// Line classification, shared with the editor UI so it does not need its own trimming.
+	std::string TrimLine(std::string_view line);
+	bool IsDirectiveLine(std::string_view line, char directive);  // e.g. '_S ULUS10000'
+	bool IsCheatNameLine(std::string_view line);                  // '_C0 Some name'
+	bool IsBlockBoundary(std::string_view line);                  // _C, _S or _G
 }
 
 class CheatFileParser {

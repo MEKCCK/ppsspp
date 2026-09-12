@@ -40,6 +40,7 @@
 #endif
 #include "Common/DbgNew.h"
 #include "UI/GameInfoCache.h"
+#include "UI/CheatEditScreen.h"
 #include "UI/CwCheatScreen.h"
 #include "UI/MiscViews.h"
 
@@ -222,7 +223,14 @@ void CwCheatScreen::CreateSettingsViews(UI::ViewGroup *leftColumn) {
 	auto di = GetI18NCategory(I18NCat::DIALOG);
 	auto mm = GetI18NCategory(I18NCat::MAINMENU);
 
-	//leftColumn->Add(new Choice(cw->T("Add Cheat")))->OnClick.Handle(this, &CwCheatScreen::OnAddCheat);
+	leftColumn->Add(new ItemHeader(cw->T("Cheats")));
+	leftColumn->Add(new Choice(cw->T("Add Cheat")))->OnClick.Add([this](UI::EventParams &) {
+		OpenEditor(CheatEditScreen::Mode::NewCheat);
+	});
+	leftColumn->Add(new Choice(cw->T("Edit Cheat File")))->OnClick.Add([this](UI::EventParams &) {
+		OpenEditor(CheatEditScreen::Mode::WholeFile);
+	});
+
 	leftColumn->Add(new ItemHeader(cw->T("Import Cheats")));
 
 	leftColumn->Add(new Choice(cw->T("Download cheat database")))->OnClick.Add([this](UI::EventParams &) {
@@ -250,9 +258,6 @@ void CwCheatScreen::CreateSettingsViews(UI::ViewGroup *leftColumn) {
 			search_.ApplySearchFilter(cheatList_, false);
 		});
 	});
-#if !defined(MOBILE_DEVICE)
-	leftColumn->Add(new Choice(cw->T("Edit Cheat File")))->OnClick.Handle(this, &CwCheatScreen::OnEditCheatFile);
-#endif
 	leftColumn->Add(new Choice(di->T("Disable All")))->OnClick.Handle(this, &CwCheatScreen::OnDisableAll);
 	leftColumn->Add(new PopupSliderChoice(&g_Config.iCwCheatRefreshIntervalMs, 1, 1000, 77, cw->T("Refresh interval"), 1, screenManager()))->SetFormat(di->T("%d ms"));
 }
@@ -303,13 +308,19 @@ void CwCheatScreen::CreateContentViews(UI::ViewGroup *parent) {
 			rightColumn->Add(new SettingHint(text, prev));
 			prevIsTitle = false;
 		} else {
-			// Regular cheat code.
+			// Regular cheat code, with a button to edit its text.
 			if (!prevIsTitle) {
 				rightColumn->Add(new Spacer(8.0f));
 			}
-			CheckBox *checkBox = rightColumn->Add(new CheckBox(&fileInfo_[i].enabled, fileInfo_[i].name));
+			LinearLayout *row = rightColumn->Add(new LinearLayout(ORIENT_HORIZONTAL, new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT)));
+			CheckBox *checkBox = row->Add(new CheckBox(&fileInfo_[i].enabled, fileInfo_[i].name, "", new LinearLayoutParams(1.0f)));
 			checkBox->OnClick.Add([=](UI::EventParams &) {
 				OnCheckBox((int)i);
+			});
+			// The line number is what the editor works from, so it has to be captured now.
+			const int lineNum = fileInfo_[i].lineNum;
+			row->Add(new Choice(ImageID("I_EDIT_TEXT"), new LinearLayoutParams(64.0f, 48.0f)))->OnClick.Add([this, lineNum](UI::EventParams &) {
+				OpenEditor(CheatEditScreen::Mode::OneCheat, lineNum);
 			});
 			prev = checkBox;
 			prevIsTitle = false;
@@ -377,19 +388,11 @@ void CwCheatScreen::OnDisableAll(UI::EventParams &params) {
 	}
 }
 
-void CwCheatScreen::OnAddCheat(UI::EventParams &params) {
-	TriggerFinish(DR_OK);
-	g_Config.bReloadCheats = true;
-}
-
-void CwCheatScreen::OnEditCheatFile(UI::EventParams &params) {
-	g_Config.bReloadCheats = true;
-	if (MIPSComp::jit) {
-		MIPSComp::jit->ClearCache();
+void CwCheatScreen::OpenEditor(CheatEditScreen::Mode mode, int cheatLineNum) {
+	if (!engine_) {
+		return;
 	}
-	if (engine_) {
-		File::OpenFileInEditor(engine_->CheatFilename());
-	}
+	screenManager()->push(new CheatEditScreen(gamePath_, engine_->CheatFilename(), gameID_, mode, cheatLineNum));
 }
 
 static char *GetLineNoNewline(char *temp, int sz, FILE *fp) {

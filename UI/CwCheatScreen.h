@@ -24,6 +24,7 @@
 #include "Common/UI/UIScreen.h"
 #include "Common/UI/Context.h"
 #include "UI/BaseScreens.h"
+#include "UI/CheatEditScreen.h"
 #include "UI/SimpleDialogScreen.h"
 #include "UI/MiscViews.h"
 #include "Common/Net/HTTPClient.h"
@@ -39,11 +40,12 @@ public:
 
 	bool TryLoadCheatInfo();
 
-	void OnAddCheat(UI::EventParams &params);
 	void OnImportCheat(UI::EventParams &params);
 	void OnImportBrowse(UI::EventParams &params);
-	void OnEditCheatFile(UI::EventParams &params);
 	void OnDisableAll(UI::EventParams &params);
+
+	// Opens the in-app text editor for a cheat file.
+	void OpenEditor(CheatEditScreen::Mode mode, int cheatLineNum = 0);
 
 	void update() override;
 	bool key(const KeyInput &input) override;
