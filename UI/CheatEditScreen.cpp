@@ -82,25 +82,27 @@ void CheatEditScreen::CreateViews() {
 
 	const bool portrait = GetDeviceOrientation() == DeviceOrientation::Portrait;
 
-	root_ = new LinearLayout(ORIENT_VERTICAL, new LayoutParams(FILL_PARENT, FILL_PARENT));
-	root_->SetSpacing(0.0f);
+	// SetSpacing lives on LinearLayout, not ViewGroup, so keep the concrete type around.
+	LinearLayout *root = new LinearLayout(ORIENT_VERTICAL, new LayoutParams(FILL_PARENT, FILL_PARENT));
+	root->SetSpacing(0.0f);
+	root_ = root;
 
 	// Deliberately no back button: Cancel is the way out, and it asks before throwing edits
 	// away. The system back key goes through key() and does the same.
 	TopBarFlags topBarFlags = portrait ? TopBarFlags::Portrait : TopBarFlags::Default;
 	topBarFlags |= TopBarFlags::NoBackButton;
-	root_->Add(new TopBar(*screenManager()->getUIContext(), topBarFlags, Title()));
+	root->Add(new TopBar(*screenManager()->getUIContext(), topBarFlags, Title()));
 
-	LinearLayout *buttons = root_->Add(new LinearLayout(ORIENT_HORIZONTAL, new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT, Margins(8, 8, 8, 4))));
+	LinearLayout *buttons = root->Add(new LinearLayout(ORIENT_HORIZONTAL, new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT, Margins(8, 8, 8, 4))));
 	buttons->SetSpacing(8.0f);
 	buttons->Add(new Button(di->T("Save"), ImageID("I_FILE_SAVE"), new LinearLayoutParams(1.0f)))->OnClick.Handle(this, &CheatEditScreen::OnSave);
 	buttons->Add(new Button(di->T("Cancel"), new LinearLayoutParams(1.0f)))->OnClick.Handle(this, &CheatEditScreen::OnCancel);
 
 	if (!noticeText_.empty()) {
-		root_->Add(new NoticeView(noticeLevel_, noticeText_, "", new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT, Margins(8, 0, 8, 4))));
+		root->Add(new NoticeView(noticeLevel_, noticeText_, "", new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT, Margins(8, 0, 8, 4))));
 	}
 
-	edit_ = root_->Add(new MultilineTextEdit(currentText_, "", new LinearLayoutParams(FILL_PARENT, FILL_PARENT, 1.0f, Margins(8, 0, 8, 8))));
+	edit_ = root->Add(new MultilineTextEdit(currentText_, "", new LinearLayoutParams(FILL_PARENT, FILL_PARENT, 1.0f, Margins(8, 0, 8, 8))));
 	edit_->OnTextChange.Add([this](UI::EventParams &) {
 		if (edit_) {
 			currentText_ = edit_->GetText();
@@ -108,7 +110,7 @@ void CheatEditScreen::CreateViews() {
 	});
 
 	if (mode_ == Mode::OneCheat) {
-		root_->Add(new Choice(cw->T("Delete this cheat"), ImageID("I_TRASHCAN"), new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT, Margins(8, 0, 8, 8))))->OnClick.Handle(this, &CheatEditScreen::OnDelete);
+		root->Add(new Choice(cw->T("Delete this cheat"), ImageID("I_TRASHCAN"), new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT, Margins(8, 0, 8, 8))))->OnClick.Handle(this, &CheatEditScreen::OnDelete);
 	}
 }
 
