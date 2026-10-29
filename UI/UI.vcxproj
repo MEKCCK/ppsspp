@@ -34,6 +34,7 @@
     <ClCompile Include="ChatScreen.cpp" />
     <ClCompile Include="ControlMappingScreen.cpp" />
     <ClCompile Include="CustomButtonMappingScreen.cpp" />
+    <ClCompile Include="CheatEditScreen.cpp" />
     <ClCompile Include="CwCheatScreen.cpp" />
     <ClCompile Include="DebugOverlay.cpp" />
     <ClCompile Include="DeveloperToolsScreen.cpp" />
@@ -110,6 +111,7 @@
     <ClInclude Include="GamepadEmu.h" />
     <ClInclude Include="GameScreen.h" />
     <ClInclude Include="GameSettingsScreen.h" />
+    <ClInclude Include="CheatEditScreen.h" />
     <ClInclude Include="CwCheatScreen.h" />
     <ClInclude Include="GPUDriverTestScreen.h" />
     <ClInclude Include="IAPScreen.h" />

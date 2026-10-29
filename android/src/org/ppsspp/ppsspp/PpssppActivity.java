@@ -1600,10 +1600,20 @@ public class PpssppActivity extends AppCompatActivity implements SensorEventList
 			Log.i(TAG, params);
 			return true;
 		} else if (command.equals("showKeyboard") && surfView != null) {
+			// Having an input connection is not enough: the IME also wants the view to claim to be a
+			// text editor (onCheckIsTextEditor) and to actually hold focus, which it never did
+			// before - showSoftInput() had nothing to attach to.
+			NativeTextInput.setTextInputActive(true);
+			surfView.requestFocus();
 			InputMethodManager inputMethodManager = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
-			inputMethodManager.showSoftInput(surfView, InputMethodManager.SHOW_IMPLICIT);
+			// Make the IME re-read the input connection we hand out for this view.
+			inputMethodManager.restartInput(surfView);
+			if (!inputMethodManager.showSoftInput(surfView, 0)) {
+				Log.w(TAG, "showSoftInput was refused");
+			}
 			return true;
 		} else if (command.equals("hideKeyboard") && surfView != null) {
+			NativeTextInput.setTextInputActive(false);
 			InputMethodManager inputMethodManager = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
 			inputMethodManager.hideSoftInputFromWindow(surfView.getWindowToken(), 0);
 			return true;

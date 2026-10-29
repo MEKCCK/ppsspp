@@ -5,7 +5,7 @@ on:
 jobs:
   linux:
     name: Linux (AppImage - official script)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v4
         with:
@@ -15,8 +15,11 @@ jobs:
       - name: Install deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build build-essential qt6-base-dev qt6-svg-dev qt6-tools-dev libsdl2-dev libglew-dev \
-              libzip-dev libpng-dev libzstd-dev libgl1-mesa-dev libssl-dev pkg-config wget
+          # SDL3 and SDL3_ttf are required now; SDL2 is not enough. Same list as the main
+          # build workflow, plus what the Qt frontend and the AppImage script need.
+          sudo apt-get install -y cmake ninja-build build-essential qt6-base-dev qt6-svg-dev qt6-tools-dev \
+              libsdl3-dev libsdl3-ttf-dev libgl1-mesa-dev libglu1-mesa-dev libfontconfig1-dev libcurl4-openssl-dev \
+              libglew-dev libzip-dev libpng-dev libzstd-dev libssl-dev pkg-config wget
 
       - name: Configure & build
         run: |
@@ -56,7 +59,7 @@ jobs:
           submodules: recursive
 
       - name: Install deps
-        run: brew install cmake ninja sdl2 glew zlib libzip libpng zstd pkg-config
+        run: brew install cmake ninja sdl3 sdl3_ttf glew zlib libzip libpng zstd pkg-config
 
       - name: Configure & build
         run: |
@@ -131,4 +134,29 @@ jobs:
         with:
           name: PPSSPP-Windows-x64 (zip)
           path: PPSSPP-Windows-x64.zip
+
+  # The main Build workflow is disabled in this repository, which means the unit tests never
+  # run. This job keeps them running somewhere: it only builds the test target, so it is quick.
+  unit-tests:
+    name: Unit tests (Linux)
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build build-essential \
+              libsdl3-dev libsdl3-ttf-dev libgl1-mesa-dev libglu1-mesa-dev libfontconfig1-dev libcurl4-openssl-dev
+
+      - name: Configure & build the tests
+        run: |
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DUNITTEST=ON -DUSE_FFMPEG=OFF
+          cmake --build build --target PPSSPPUnitTest -j$(nproc)
+
+      - name: Run the unit tests
+        run: ./build/PPSSPPUnitTest all
 

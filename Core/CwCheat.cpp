@@ -65,30 +65,22 @@ CheatFileParser::~CheatFileParser() {
 }
 
 bool CheatFileParser::Parse() {
-	// Ugh, using a member variable as loop counter is bad.
-	for (int lineNumber = 1; fp_ && !feof(fp_); ++lineNumber) {
+	if (!fp_)
+		return false;
+
+	int lineNumber = 0;
+	while (!feof(fp_)) {
 		char temp[2048];
 		char *tempLine = fgets(temp, sizeof(temp), fp_);
 		if (!tempLine)
 			continue;
 
+		++lineNumber;
 		// Detect UTF-8 BOM sequence, and ignore it.
 		if (lineNumber == 1 && memcmp(tempLine, "\xEF\xBB\xBF", 3) == 0)
 			tempLine += 3;
-		std::string line = TrimString(tempLine);
 
-		// Minimum length 5 is shortest possible _ lines name of the game "_G N+"
-		// and a minimum of 1 displayable character in cheat name string "_C0 1"
-		// which both equal to 5 characters.
-		if (line.length() >= 5 && line[0] == '_') {
-			ParseLine(line, lineNumber);
-		} else if (line.length() >= 2 && line[0] == '/' && line[1] == '/') {
-			// Comment, ignore.
-		} else if (line.length() >= 1 && line[0] == '#') {
-			// Comment, ignore.
-		} else if (line.length() > 0) {
-			errors_.push_back(StringFromFormat("Unrecognized content on line %d: expecting _", lineNumber));
-		}
+		ParseTrimmedLine(TrimString(tempLine), lineNumber);
 	}
 
 	Flush();
@@ -96,16 +88,53 @@ bool CheatFileParser::Parse() {
 	return errors_.empty();
 }
 
-void CheatFileParser::Flush() {
-	if (!pendingLines_.empty()) {
-		cheats_.push_back(CheatCode{lastCheatInfo_.name, pendingLines_});
-		FlushCheatInfo();
-		pendingLines_.clear();
+bool CheatFileParser::ParseText(std::string_view text) {
+	int lineNumber = 0;
+	size_t pos = 0;
+	for (;;) {
+		size_t end = text.find('\n', pos);
+		std::string_view line = end == std::string_view::npos ? text.substr(pos) : text.substr(pos, end - pos);
+		++lineNumber;
+
+		// Detect UTF-8 BOM sequence, and ignore it.
+		if (lineNumber == 1 && line.size() >= 3 && memcmp(line.data(), "\xEF\xBB\xBF", 3) == 0)
+			line.remove_prefix(3);
+
+		ParseTrimmedLine(TrimString(line), lineNumber);
+
+		if (end == std::string_view::npos)
+			break;
+		pos = end + 1;
+	}
+
+	Flush();
+
+	return errors_.empty();
+}
+
+void CheatFileParser::ParseTrimmedLine(const std::string &line, int lineNumber) {
+	// Minimum length 5 is shortest possible _ lines name of the game "_G N+"
+	// and a minimum of 1 displayable character in cheat name string "_C0 1"
+	// which both equal to 5 characters.
+	if (line.length() >= 5 && line[0] == '_') {
+		ParseLine(line, lineNumber);
+	} else if (line.length() >= 2 && line[0] == '/' && line[1] == '/') {
+		// Comment, ignore.
+	} else if (line.length() >= 1 && line[0] == '#') {
+		// Comment, ignore.
+	} else if (line.length() > 0) {
+		errors_.push_back(StringFromFormat("Unrecognized content on line %d: expecting _", lineNumber));
 	}
 }
 
-void CheatFileParser::FlushCheatInfo() {
+void CheatFileParser::Flush() {
+	// Push the info even when the cheat has no _L lines - otherwise such a cheat
+	// never shows up in FileInfo(), which means the UI cannot see or edit it.
 	if (lastCheatInfo_.lineNum != 0) {
+		if (!pendingLines_.empty()) {
+			cheats_.push_back(CheatCode{lastCheatInfo_.name, pendingLines_});
+			pendingLines_.clear();
+		}
 		cheatInfo_.push_back(lastCheatInfo_);
 		lastCheatInfo_ = { 0 };
 	}
@@ -189,7 +218,8 @@ void CheatFileParser::ParseDataLine(const std::string &line, int lineNumber) {
 	}
 
 	if (!cheatEnabled_) {
-		FlushCheatInfo();
+		// Disabled cheat: its _L lines are not executed, but it still counts as one
+		// cheat entry (the enabled flag comes from the _C line itself).
 		return;
 	}
 

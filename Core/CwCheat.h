@@ -34,9 +34,11 @@ struct CheatCode {
 };
 
 struct CheatFileInfo {
-	int lineNum;
+	// The defaults matter: the parser keeps one of these around and decides whether it holds a
+	// cheat yet by looking at lineNum, so leaving it uninitialized pushed a garbage entry.
+	int lineNum = 0;
 	std::string name;
-	bool enabled;
+	bool enabled = false;
 
 	bool IsTitle(std::string_view *title) const {
 		return DetectCheatTitle(name, title);
@@ -87,6 +89,9 @@ public:
 	~CheatFileParser();
 
 	bool Parse();
+	// 直接解析一段文字（语意与 Parse() 一致：跳过首行 BOM、TrimString、同样的长度检查）。
+	// 供 UI 在写回文件前验证编辑后的内容。
+	bool ParseText(std::string_view text);
 
 	const std::vector<std::string> &GetErrors() const { return errors_; }
 	const std::vector<CheatCode> &GetCheats() const { return cheats_; }
@@ -94,8 +99,8 @@ public:
 
 protected:
 	void Flush();
-	void FlushCheatInfo();
 	void AddError(const std::string &msg, int lineNumber);
+	void ParseTrimmedLine(const std::string &line, int lineNumber);
 	void ParseLine(const std::string &line, int lineNumber);
 	void ParseDataLine(const std::string &line, int lineNumber);
 	bool ValidateGameID(std::string_view gameID);
